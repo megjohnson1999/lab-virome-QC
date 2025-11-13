@@ -123,9 +123,20 @@ rule concatenate_merged_reads:
         "../envs/bbtools.yaml"
     shell:
         """
-        echo "Concatenating {input}" > {log}
+        # Validate input files first
+        echo "Checking input file integrity before concatenation..." > {log}
+        for file in {input}; do
+            gzip -t "$file" || {{ echo "❌ Error: File $file failed integrity check" >> {log}; exit 1; }}
+        done
+        echo "✅ All input files passed integrity check" >> {log}
+
+        # Concatenate using zcat and gzip
+        echo "Starting concatenation with zcat..." >> {log}
         zcat {input} | gzip -c > {output} 2>> {log}
-        gzip -t {output} && echo "✅ Output verified" >> {log}
+
+        # Verify output file
+        echo "Verifying output file integrity..." >> {log}
+        gzip -t {output} && echo "✅ Output file integrity verified" >> {log} || {{ echo "❌ Output file corrupted" >> {log}; exit 1; }}
         """
 
 
@@ -142,9 +153,20 @@ rule concatenate_unmerged_r1:
         "../envs/bbtools.yaml"
     shell:
         """
-        echo "Concatenating {input}" > {log}
+        # Validate input files first
+        echo "Checking input file integrity before concatenation..." > {log}
+        for file in {input}; do
+            gzip -t "$file" || {{ echo "❌ Error: File $file failed integrity check" >> {log}; exit 1; }}
+        done
+        echo "✅ All input files passed integrity check" >> {log}
+
+        # Concatenate using zcat and gzip
+        echo "Starting concatenation with zcat..." >> {log}
         zcat {input} | gzip -c > {output} 2>> {log}
-        gzip -t {output} && echo "✅ Output verified" >> {log}
+
+        # Verify output file
+        echo "Verifying output file integrity..." >> {log}
+        gzip -t {output} && echo "✅ Output file integrity verified" >> {log} || {{ echo "❌ Output file corrupted" >> {log}; exit 1; }}
         """
 
 
@@ -161,9 +183,20 @@ rule concatenate_unmerged_r2:
         "../envs/bbtools.yaml"
     shell:
         """
-        echo "Concatenating {input}" > {log}
+        # Validate input files first
+        echo "Checking input file integrity before concatenation..." > {log}
+        for file in {input}; do
+            gzip -t "$file" || {{ echo "❌ Error: File $file failed integrity check" >> {log}; exit 1; }}
+        done
+        echo "✅ All input files passed integrity check" >> {log}
+
+        # Concatenate using zcat and gzip
+        echo "Starting concatenation with zcat..." >> {log}
         zcat {input} | gzip -c > {output} 2>> {log}
-        gzip -t {output} && echo "✅ Output verified" >> {log}
+
+        # Verify output file
+        echo "Verifying output file integrity..." >> {log}
+        gzip -t {output} && echo "✅ Output file integrity verified" >> {log} || {{ echo "❌ Output file corrupted" >> {log}; exit 1; }}
         """
 
 
@@ -265,6 +298,27 @@ rule megahit_individual:
 
         # Verify output
         [ -f {output.contigs} ] || {{ echo "Error: Assembly failed" >> {log}; exit 1; }}
+        """
+
+
+# ================================================================================
+# Create Convenience Symlinks
+# ================================================================================
+
+rule link_coassembly:
+    """
+    Create convenience symlink for coassembly output
+
+    Makes the coassembly easily accessible at a standard location for
+    downstream pipelines (e.g., phage-analysis pipeline).
+    """
+    input:
+        f"{OUTDIR}/assembly/megahit/final.contigs.fa"
+    output:
+        f"{OUTDIR}/assembly/final.contigs.fa"
+    shell:
+        """
+        ln -sf megahit/final.contigs.fa {output}
         """
 
 

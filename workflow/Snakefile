@@ -162,6 +162,7 @@ def get_final_outputs():
         if ASSEMBLY_STRATEGY == "coassembly":
             outputs.extend([
                 f"{OUTDIR}/assembly/megahit/final.contigs.fa",
+                f"{OUTDIR}/assembly/final.contigs.fa",  # Convenience symlink
                 f"{OUTDIR}/reports/assembly_stats.tsv"
             ])
         elif ASSEMBLY_STRATEGY == "individual":

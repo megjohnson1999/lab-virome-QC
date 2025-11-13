@@ -13,7 +13,23 @@ output_dir: "results_full"
 pipeline:
   start_from: "raw_reads"       # Start from raw sequencing data
   run_assembly: true            # Run both QC AND assembly
-  assembly_strategy: "coassembly"  # Combine all samples (recommended)
+
+  # Assembly strategy (IMPORTANT: Choose based on your analysis goals)
+  # ----------------------------------------------------------------------------
+  # "coassembly" (RECOMMENDED for viromes):
+  #   - Pools all samples into a single community assembly
+  #   - Better for detecting rare viruses (increased depth across samples)
+  #   - Creates shared reference for viral community analysis
+  #   - Compatible with phage-analysis pipeline and other downstream tools
+  #   - Output: Single contigs file representing entire viral community
+  #
+  # "individual":
+  #   - Assembles each sample separately
+  #   - Use when samples represent different conditions/timepoints
+  #   - Better for sample-specific strain resolution
+  #   - Output: Multiple contig files, one per sample
+  # ----------------------------------------------------------------------------
+  assembly_strategy: "coassembly"
 
 # Assembly parameters
 assembly:
