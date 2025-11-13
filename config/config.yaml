@@ -5,6 +5,36 @@
 # Output directory
 output_dir: "results"
 
+# ================================================================================
+# Pipeline Control - Modular Execution
+# ================================================================================
+# The pipeline can run in multiple modes:
+# 1. Full QC + Assembly: start_from="raw_reads" + run_assembly=true
+# 2. QC only: start_from="raw_reads" + run_assembly=false
+# 3. Assembly from cleaned reads: start_from="cleaned_reads" + run_assembly=true
+# 4. From contigs: start_from="contigs" (future feature)
+
+pipeline:
+  # Where to start the pipeline
+  # Options: "raw_reads", "cleaned_reads", "contigs"
+  start_from: "raw_reads"
+
+  # Run assembly module?
+  run_assembly: false
+
+  # Assembly strategy (only used if run_assembly=true)
+  # "coassembly": Combine all samples into one assembly (recommended for viromes)
+  # "individual": Assemble each sample separately
+  assembly_strategy: "coassembly"
+
+  # If start_from="cleaned_reads", specify directory containing cleaned reads
+  # Format: {sample}_R1.fastq.gz and {sample}_R2.fastq.gz
+  cleaned_reads_dir: null
+
+# Assembly parameters (only used if run_assembly=true)
+assembly:
+  min_contig_length: 1000  # Minimum contig length to keep (bp)
+
 # Quality filtering parameters
 quality_threshold: 20  # Phred quality score (Q20 = 99% accuracy)
 min_read_length: 100   # Minimum read length after trimming (higher for library prep artifacts)

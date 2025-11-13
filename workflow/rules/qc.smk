@@ -1,0 +1,519 @@
+"""
+Quality Control Module
+======================
+
+QC rules for virome data preprocessing.
+
+Input: Raw paired-end reads
+Output: Cleaned paired-end reads in {OUTDIR}/clean_reads/
+"""
+
+# ================================================================================
+# FastQC and Quality Assessment
+# ================================================================================
+
+rule fastqc_raw:
+    """
+    Run FastQC on raw reads to assess initial quality and identify artifacts
+    """
+    input:
+        r1 = lambda wc: SAMPLES[wc.sample]["r1"],
+        r2 = lambda wc: SAMPLES[wc.sample]["r2"]
+    output:
+        html_r1 = f"{OUTDIR}/fastqc/raw/{{sample}}_R1_fastqc.html",
+        html_r2 = f"{OUTDIR}/fastqc/raw/{{sample}}_R2_fastqc.html",
+        zip_r1 = f"{OUTDIR}/fastqc/raw/{{sample}}_R1_fastqc.zip",
+        zip_r2 = f"{OUTDIR}/fastqc/raw/{{sample}}_R2_fastqc.zip"
+    log:
+        f"{OUTDIR}/logs/fastqc_raw/{{sample}}.log"
+    threads: 2
+    conda:
+        "envs/qc.yaml"
+    shell:
+        """
+        fastqc -t {threads} -o $(dirname {output.html_r1}) {input.r1} {input.r2} 2>&1 | tee {log}
+        """
+
+rule clumpify_optical_duplicates:
+    """
+    Remove optical duplicates using Clumpify (BBTools)
+    These are Illumina sequencing artifacts from patterned flow cells
+
+    Note: Memory requirement scales with read count (~0.5GB per million reads)
+          Allocated 48GB to handle samples up to ~95 million reads
+    """
+    input:
+        r1 = lambda wc: SAMPLES[wc.sample]["r1"],
+        r2 = lambda wc: SAMPLES[wc.sample]["r2"]
+    output:
+        r1 = temp(f"{OUTDIR}/clumpify/{{sample}}_R1.fastq.gz"),
+        r2 = temp(f"{OUTDIR}/clumpify/{{sample}}_R2.fastq.gz")
+    log:
+        f"{OUTDIR}/logs/clumpify/{{sample}}.log"
+    threads: 8
+    resources:
+        mem_mb = 48000
+    conda:
+        "envs/bbtools.yaml"
+    shell:
+        """
+        clumpify.sh \
+            in1={input.r1} in2={input.r2} \
+            out1={output.r1} out2={output.r2} \
+            dedupe optical \
+            threads={threads} \
+            -Xmx{resources.mem_mb}m \
+            2>&1 | tee {log}
+        """
+
+rule fastp_trim:
+    """
+    CRITICAL STEP: fastp with NovaSeq-specific settings
+
+    1. PolyG tail removal (NovaSeq 2-channel chemistry artifact) - MUST BE FIRST
+    2. Adapter trimming (auto-detect Illumina adapters)
+    3. Quality filtering (Q20 threshold)
+    4. Length filtering (100bp minimum due to library prep artifacts)
+    5. Complexity filtering
+
+    This handles most NovaSeq + Illumina library prep artifacts
+    """
+    input:
+        r1 = f"{OUTDIR}/clumpify/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/clumpify/{{sample}}_R2.fastq.gz"
+    output:
+        r1 = temp(f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz"),
+        r2 = temp(f"{OUTDIR}/fastp/{{sample}}_R2.fastq.gz"),
+        html = f"{OUTDIR}/fastp/{{sample}}_fastp.html",
+        json = f"{OUTDIR}/fastp/{{sample}}_fastp.json"
+    log:
+        f"{OUTDIR}/logs/fastp/{{sample}}.log"
+    threads: 8
+    params:
+        min_length = config.get("min_read_length", 100),
+        qual_threshold = config.get("quality_threshold", 20)
+    conda:
+        "envs/qc.yaml"
+    shell:
+        """
+        fastp \
+            -i {input.r1} -I {input.r2} \
+            -o {output.r1} -O {output.r2} \
+            --trim_poly_g \
+            --poly_g_min_len 10 \
+            --detect_adapter_for_pe \
+            --qualified_quality_phred {params.qual_threshold} \
+            --length_required {params.min_length} \
+            --low_complexity_filter \
+            --complexity_threshold 30 \
+            --correction \
+            --thread {threads} \
+            --html {output.html} \
+            --json {output.json} \
+            2>&1 | tee {log}
+        """
+
+rule fastqc_trimmed:
+    """
+    FastQC on trimmed reads to verify polyG removal and adapter trimming success
+    """
+    input:
+        r1 = f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/fastp/{{sample}}_R2.fastq.gz"
+    output:
+        html_r1 = f"{OUTDIR}/fastqc/trimmed/{{sample}}_R1_fastqc.html",
+        html_r2 = f"{OUTDIR}/fastqc/trimmed/{{sample}}_R2_fastqc.html",
+        zip_r1 = f"{OUTDIR}/fastqc/trimmed/{{sample}}_R1_fastqc.zip",
+        zip_r2 = f"{OUTDIR}/fastqc/trimmed/{{sample}}_R2_fastqc.zip"
+    log:
+        f"{OUTDIR}/logs/fastqc_trimmed/{{sample}}.log"
+    threads: 2
+    conda:
+        "envs/qc.yaml"
+    shell:
+        """
+        fastqc -t {threads} -o $(dirname {output.html_r1}) {input.r1} {input.r2} 2>&1 | tee {log}
+        """
+
+rule flag_phix:
+    """
+    Flag PhiX174 contamination without removing reads
+
+    For VLP-enriched viromes, we flag contamination rather than remove it to avoid
+    accidentally discarding legitimate viral sequences. This generates QC metrics
+    to identify samples with abnormal PhiX levels (which may indicate sequencing issues).
+
+    Uses BBDuk in detection-only mode to quantify PhiX contamination.
+    """
+    input:
+        r1 = f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/fastp/{{sample}}_R2.fastq.gz"
+    output:
+        stats = f"{OUTDIR}/contamination_flagging/phix/{{sample}}_phix_stats.txt"
+    log:
+        f"{OUTDIR}/logs/flag_phix/{{sample}}.log"
+    threads: 4
+    resources:
+        mem_mb = 8000
+    params:
+        phix_ref = REFERENCES["phix"]
+    conda:
+        "envs/bbtools.yaml"
+    shell:
+        """
+        # Run bbduk in stats-only mode (no read filtering)
+        # Redirect stdout to /dev/null since we only want stats
+        bbduk.sh \
+            in1={input.r1} in2={input.r2} \
+            ref={params.phix_ref} \
+            k=31 hdist=1 \
+            stats={output.stats} \
+            threads={threads} \
+            -Xmx{resources.mem_mb}m \
+            2>&1 | tee {log}
+        """
+
+rule flag_univec:
+    """
+    Flag vector/plasmid contamination without removing reads
+
+    Checks for common cloning vectors, plasmids, and synthetic sequences that may
+    indicate laboratory contamination. Generates QC metrics to identify outlier samples.
+
+    Uses comprehensive UniVec-derived database including common lab vectors.
+    """
+    input:
+        r1 = f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/fastp/{{sample}}_R2.fastq.gz"
+    output:
+        stats = f"{OUTDIR}/contamination_flagging/univec/{{sample}}_univec_stats.txt"
+    log:
+        f"{OUTDIR}/logs/flag_univec/{{sample}}.log"
+    threads: 4
+    resources:
+        mem_mb = 8000
+    params:
+        vector_ref = REFERENCES["vector_contaminants"]
+    conda:
+        "envs/bbtools.yaml"
+    shell:
+        """
+        # Run bbduk in stats-only mode to detect vector contamination
+        bbduk.sh \
+            in1={input.r1} in2={input.r2} \
+            ref={params.vector_ref} \
+            k=31 hdist=1 \
+            stats={output.stats} \
+            threads={threads} \
+            -Xmx{resources.mem_mb}m \
+            2>&1 | tee {log}
+        """
+
+rule host_depletion:
+    """
+    Remove host genome sequences using minimap2
+
+    For VLP-enriched samples, high host contamination (>10%) indicates VLP prep failure
+    This step serves dual purpose:
+    1. Remove host sequences from analysis
+    2. QC metric for VLP enrichment success
+
+    Note: Now operates directly on fastp output (PhiX/vector flagging doesn't filter reads)
+    Note: Minimap2 loads host genome index (~12GB for human) plus read processing
+          Allocated 24GB to handle large samples
+    """
+    input:
+        r1 = f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/fastp/{{sample}}_R2.fastq.gz",
+        host_ref = REFERENCES["host_genome"],
+        # Ensure contamination flagging happens first (for workflow ordering)
+        phix_stats = f"{OUTDIR}/contamination_flagging/phix/{{sample}}_phix_stats.txt",
+        univec_stats = f"{OUTDIR}/contamination_flagging/univec/{{sample}}_univec_stats.txt"
+    output:
+        r1 = temp(f"{OUTDIR}/host_depleted/{{sample}}_R1.fastq.gz"),
+        r2 = temp(f"{OUTDIR}/host_depleted/{{sample}}_R2.fastq.gz"),
+        stats = f"{OUTDIR}/host_depleted/{{sample}}_host_stats.txt"
+    log:
+        f"{OUTDIR}/logs/host_depletion/{{sample}}.log"
+    threads: 8
+    resources:
+        mem_mb = 24000
+    conda:
+        "envs/mapping.yaml"
+    shell:
+        """
+        # Map to host genome
+        minimap2 -ax sr -t {threads} {input.host_ref} {input.r1} {input.r2} 2>> {log} | \
+        samtools view -@ {threads} -bS - | \
+        samtools sort -@ {threads} -n -o - | \
+        samtools fastq -@ {threads} -f 12 -F 256 \
+            -1 {output.r1} -2 {output.r2} - 2>> {log}
+
+        # Calculate host mapping stats
+        echo "Sample: {wildcards.sample}" > {output.stats}
+        echo "Host reference: {input.host_ref}" >> {output.stats}
+        minimap2 -ax sr -t {threads} {input.host_ref} {input.r1} {input.r2} 2>> {log} | \
+        samtools view -@ {threads} -c >> {output.stats}
+        """
+
+rule remove_rrna:
+    """
+    Remove ribosomal RNA sequences using BBDuk
+
+    Uses SILVA database for comprehensive rRNA removal
+    Critical for RT-based protocols where all RNA gets converted to cDNA
+
+    Note: Full SILVA SSU+LSU database loads 123M kmers (~5GB)
+          Additional memory needed for read processing on large samples
+          Allocated 32GB to handle database + up to 95M reads
+    """
+    input:
+        r1 = f"{OUTDIR}/host_depleted/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/host_depleted/{{sample}}_R2.fastq.gz"
+    output:
+        r1 = temp(f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz"),
+        r2 = temp(f"{OUTDIR}/rrna_removed/{{sample}}_R2.fastq.gz"),
+        stats = f"{OUTDIR}/rrna_removed/{{sample}}_rrna_stats.txt"
+    log:
+        f"{OUTDIR}/logs/rrna_removal/{{sample}}.log"
+    threads: 4
+    resources:
+        mem_mb = 32000
+    params:
+        rrna_ref = REFERENCES["rrna"]
+    conda:
+        "envs/bbtools.yaml"
+    shell:
+        """
+        bbduk.sh \
+            in1={input.r1} in2={input.r2} \
+            out1={output.r1} out2={output.r2} \
+            ref={params.rrna_ref} \
+            k=31 \
+            stats={output.stats} \
+            threads={threads} \
+            -Xmx{resources.mem_mb}m \
+            2>&1 | tee {log}
+        """
+
+rule viromeqc:
+    """
+    ViromeQC: THE critical QC metric for VLP-enriched viromes
+
+    Calculates enrichment score based on:
+    - SSU rRNA gene abundance
+    - LSU rRNA gene abundance
+    - 31 prokaryotic single-copy marker genes
+
+    Low enrichment score = VLP prep failure or excessive bacterial contamination
+
+    IMPORTANT: Runs on host_depleted reads (BEFORE rRNA removal) to get accurate
+    enrichment scores. Running after rRNA removal would artificially inflate the
+    enrichment score since rRNA has already been removed.
+
+    Note: Runs bowtie2 and diamond alignments which require memory for large samples
+          Allocated 16GB to handle samples up to ~95M reads
+          Can take several hours for large samples (>10M reads)
+    """
+    input:
+        r1 = f"{OUTDIR}/host_depleted/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/host_depleted/{{sample}}_R2.fastq.gz"
+    output:
+        report = f"{OUTDIR}/viromeqc/{{sample}}_viromeqc.txt"
+    log:
+        f"{OUTDIR}/logs/viromeqc/{{sample}}.log"
+    threads: 4
+    resources:
+        mem_mb = 16000,
+        time_min = 360
+    conda:
+        "envs/viromeqc.yaml"
+    shell:
+        """
+        viromeQC.py \
+            -i {input.r1} {input.r2} \
+            -o {output.report} \
+            2>&1 | tee {log}
+        """
+
+rule final_fastqc:
+    """
+    Final FastQC on clean reads
+    """
+    input:
+        r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/rrna_removed/{{sample}}_R2.fastq.gz"
+    output:
+        html_r1 = f"{OUTDIR}/fastqc/final/{{sample}}_R1_fastqc.html",
+        html_r2 = f"{OUTDIR}/fastqc/final/{{sample}}_R2_fastqc.html",
+        zip_r1 = f"{OUTDIR}/fastqc/final/{{sample}}_R1_fastqc.zip",
+        zip_r2 = f"{OUTDIR}/fastqc/final/{{sample}}_R2_fastqc.zip"
+    log:
+        f"{OUTDIR}/logs/fastqc_final/{{sample}}.log"
+    threads: 2
+    conda:
+        "envs/qc.yaml"
+    shell:
+        """
+        fastqc -t {threads} -o $(dirname {output.html_r1}) {input.r1} {input.r2} 2>&1 | tee {log}
+        """
+
+rule symlink_clean_reads:
+    """
+    Create symlinks to final clean reads for easy access
+    """
+    input:
+        r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/rrna_removed/{{sample}}_R2.fastq.gz"
+    output:
+        r1 = f"{OUTDIR}/clean_reads/{{sample}}_R1_clean.fastq.gz",
+        r2 = f"{OUTDIR}/clean_reads/{{sample}}_R2_clean.fastq.gz"
+    shell:
+        """
+        ln -sf $(readlink -f {input.r1}) {output.r1}
+        ln -sf $(readlink -f {input.r2}) {output.r2}
+        """
+
+# ================================================================================
+# Reporting Rules
+# ================================================================================
+
+rule count_reads:
+    """
+    Count reads at each QC step for tracking
+
+    Note: phix_removed step removed since we now flag instead of filter
+    Note: Can take several hours for large samples (50M+ reads)
+    """
+    input:
+        raw_r1 = lambda wc: SAMPLES[wc.sample]["r1"],
+        clumpify_r1 = f"{OUTDIR}/clumpify/{{sample}}_R1.fastq.gz",
+        fastp_r1 = f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz",
+        host_r1 = f"{OUTDIR}/host_depleted/{{sample}}_R1.fastq.gz",
+        rrna_r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz"
+    output:
+        temp(f"{OUTDIR}/reports/read_counts/{{sample}}.tsv")
+    resources:
+        time_min = 360
+    conda:
+        "envs/qc.yaml"
+    shell:
+        """
+        echo -e "sample\tstep\treads" > {output}
+        echo -e "{wildcards.sample}\traw\t$(zcat {input.raw_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
+        echo -e "{wildcards.sample}\tclumpify\t$(zcat {input.clumpify_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
+        echo -e "{wildcards.sample}\tfastp\t$(zcat {input.fastp_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
+        echo -e "{wildcards.sample}\thost_depleted\t$(zcat {input.host_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
+        echo -e "{wildcards.sample}\tclean\t$(zcat {input.rrna_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
+        """
+
+rule merge_read_counts:
+    """
+    Merge read counts from all samples
+    """
+    input:
+        expand(f"{OUTDIR}/reports/read_counts/{{sample}}.tsv", sample=SAMPLES)
+    output:
+        f"{OUTDIR}/reports/read_counts.tsv"
+    shell:
+        """
+        head -n 1 {input[0]} > {output}
+        tail -n +2 -q {input} >> {output}
+        """
+
+rule aggregate_contamination_stats:
+    """
+    Aggregate PhiX and vector contamination statistics across all samples
+
+    Parses BBDuk stats files to create a summary table showing contamination
+    levels per sample. This helps identify outlier samples with abnormal
+    contamination that may indicate sequencing or library prep issues.
+    """
+    input:
+        phix_stats = expand(f"{OUTDIR}/contamination_flagging/phix/{{sample}}_phix_stats.txt", sample=SAMPLES),
+        univec_stats = expand(f"{OUTDIR}/contamination_flagging/univec/{{sample}}_univec_stats.txt", sample=SAMPLES)
+    output:
+        f"{OUTDIR}/reports/contamination_summary.tsv"
+    conda:
+        "envs/qc.yaml"
+    script:
+        "scripts/aggregate_contamination_stats.py"
+
+rule plot_contamination:
+    """
+    Generate contamination visualization plots
+
+    Creates multiple plot types to help identify outlier samples:
+    - Bar plot: contamination levels per sample
+    - Box plot: distribution of contamination levels
+    - Scatter plot: correlation between PhiX and vector contamination
+    - Heatmap: overview of contamination across all samples
+    """
+    input:
+        f"{OUTDIR}/reports/contamination_summary.tsv"
+    output:
+        f"{OUTDIR}/reports/contamination_bars.png",
+        f"{OUTDIR}/reports/contamination_boxes.png",
+        f"{OUTDIR}/reports/contamination_scatter.png",
+        f"{OUTDIR}/reports/contamination_heatmap.png"
+    params:
+        output_prefix = f"{OUTDIR}/reports/contamination"
+    conda:
+        "envs/qc.yaml"
+    script:
+        "scripts/plot_contamination.py"
+
+rule qc_flags:
+    """
+    Generate QC pass/fail flags for each sample based on:
+    - ViromeQC enrichment score
+    - % host reads
+    - % rRNA reads
+    - Final read count
+    """
+    input:
+        viromeqc = expand(f"{OUTDIR}/viromeqc/{{sample}}_viromeqc.txt", sample=SAMPLES),
+        read_counts = f"{OUTDIR}/reports/read_counts.tsv"
+    output:
+        f"{OUTDIR}/reports/sample_qc_flags.tsv"
+    conda:
+        "envs/qc.yaml"
+    script:
+        "scripts/generate_qc_flags.py"
+
+rule multiqc:
+    """
+    Aggregate all QC reports into single MultiQC dashboard
+
+    Now includes contamination flagging summary
+    """
+    input:
+        # FastQC reports
+        expand(f"{OUTDIR}/fastqc/raw/{{sample}}_R1_fastqc.zip", sample=SAMPLES),
+        expand(f"{OUTDIR}/fastqc/trimmed/{{sample}}_R1_fastqc.zip", sample=SAMPLES),
+        expand(f"{OUTDIR}/fastqc/final/{{sample}}_R1_fastqc.zip", sample=SAMPLES),
+        # fastp reports
+        expand(f"{OUTDIR}/fastp/{{sample}}_fastp.json", sample=SAMPLES),
+        # ViromeQC
+        expand(f"{OUTDIR}/viromeqc/{{sample}}_viromeqc.txt", sample=SAMPLES),
+        # Read counts
+        f"{OUTDIR}/reports/read_counts.tsv",
+        # QC flags
+        f"{OUTDIR}/reports/sample_qc_flags.tsv",
+        # Contamination summary
+        f"{OUTDIR}/reports/contamination_summary.tsv"
+    output:
+        f"{OUTDIR}/multiqc/multiqc_report.html"
+    log:
+        f"{OUTDIR}/logs/multiqc.log"
+    conda:
+        "envs/qc.yaml"
+    shell:
+        """
+        multiqc \
+            {OUTDIR} \
+            -o {OUTDIR}/multiqc \
+            -n multiqc_report.html \
+            --force \
+            2>&1 | tee {log}
+        """

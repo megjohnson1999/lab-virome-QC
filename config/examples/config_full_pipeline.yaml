@@ -1,0 +1,50 @@
+# =============================================================================
+# Example Config: Full Pipeline (QC + Assembly)
+# =============================================================================
+# This configuration runs both QC and assembly modules.
+# Use this for a complete analysis from raw reads to assembled contigs.
+#
+# Usage: snakemake --configfile config/examples/config_full_pipeline.yaml
+# =============================================================================
+
+output_dir: "results_full"
+
+# Pipeline control
+pipeline:
+  start_from: "raw_reads"       # Start from raw sequencing data
+  run_assembly: true            # Run both QC AND assembly
+  assembly_strategy: "coassembly"  # Combine all samples (recommended)
+
+# Assembly parameters
+assembly:
+  min_contig_length: 1000       # Keep contigs >= 1kb
+
+# Quality filtering
+quality_threshold: 20
+min_read_length: 100
+
+# References (adjust paths as needed)
+references:
+  phix: "workflow/databases/phix174.fasta"
+  vector_contaminants: "workflow/databases/vector_contaminants.fa"
+  host_genome: "resources/host_genome.fasta"
+  rrna: "resources/silva_rrna.fasta"
+
+# Samples - auto-detect from directory
+sample_auto_detection:
+  enabled: true
+  input_dir: "data/raw"
+  r1_pattern: "*_R1.fastq.gz"
+  r2_pattern: "*_R2.fastq.gz"
+
+# QC thresholds
+qc_thresholds:
+  min_enrichment_score: 10
+  max_host_percent: 10
+  max_rrna_percent: 20
+  min_final_reads: 100000
+  max_duplication_rate: 80
+
+resources:
+  default_threads: 8
+  default_mem_mb: 16000
