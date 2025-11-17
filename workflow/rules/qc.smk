@@ -28,7 +28,7 @@ rule fastqc_raw:
         f"{OUTDIR}/logs/fastqc_raw/{{sample}}.log"
     threads: 2
     conda:
-        "envs/qc.yaml"
+        "../envs/qc.yaml"
     shell:
         """
         fastqc -t {threads} -o $(dirname {output.html_r1}) {input.r1} {input.r2} 2>&1 | tee {log}
@@ -54,7 +54,7 @@ rule clumpify_optical_duplicates:
     resources:
         mem_mb = 48000
     conda:
-        "envs/bbtools.yaml"
+        "../envs/bbtools.yaml"
     shell:
         """
         clumpify.sh \
@@ -93,7 +93,7 @@ rule fastp_trim:
         min_length = config.get("min_read_length", 100),
         qual_threshold = config.get("quality_threshold", 20)
     conda:
-        "envs/qc.yaml"
+        "../envs/qc.yaml"
     shell:
         """
         fastp \
@@ -129,7 +129,7 @@ rule fastqc_trimmed:
         f"{OUTDIR}/logs/fastqc_trimmed/{{sample}}.log"
     threads: 2
     conda:
-        "envs/qc.yaml"
+        "../envs/qc.yaml"
     shell:
         """
         fastqc -t {threads} -o $(dirname {output.html_r1}) {input.r1} {input.r2} 2>&1 | tee {log}
@@ -158,7 +158,7 @@ rule flag_phix:
     params:
         phix_ref = REFERENCES["phix"]
     conda:
-        "envs/bbtools.yaml"
+        "../envs/bbtools.yaml"
     shell:
         """
         # Run bbduk in stats-only mode (no read filtering)
@@ -195,7 +195,7 @@ rule flag_univec:
     params:
         vector_ref = REFERENCES["vector_contaminants"]
     conda:
-        "envs/bbtools.yaml"
+        "../envs/bbtools.yaml"
     shell:
         """
         # Run bbduk in stats-only mode to detect vector contamination
@@ -240,7 +240,7 @@ rule remove_primer_b_forward:
         ordered = config["primer_b"]["bbduk_forward"]["ordered"],
         ow = config["primer_b"]["bbduk_forward"]["ow"]
     conda:
-        "envs/bbtools.yaml"
+        "../envs/bbtools.yaml"
     shell:
         """
         bbduk.sh \
@@ -289,7 +289,7 @@ rule remove_primer_b_rc:
         ordered = config["primer_b"]["bbduk_rc"]["ordered"],
         ow = config["primer_b"]["bbduk_rc"]["ow"]
     conda:
-        "envs/bbtools.yaml"
+        "../envs/bbtools.yaml"
     shell:
         """
         bbduk.sh \
@@ -338,7 +338,7 @@ rule host_depletion:
     resources:
         mem_mb = 24000
     conda:
-        "envs/mapping.yaml"
+        "../envs/mapping.yaml"
     shell:
         """
         # Map to host genome
@@ -381,7 +381,7 @@ rule remove_rrna:
     params:
         rrna_ref = REFERENCES["rrna"]
     conda:
-        "envs/bbtools.yaml"
+        "../envs/bbtools.yaml"
     shell:
         """
         bbduk.sh \
@@ -432,7 +432,7 @@ rule remove_pcr_duplicates:
     resources:
         mem_mb = 32000  # Similar to rRNA removal, scales with read count
     conda:
-        "envs/bbtools.yaml"
+        "../envs/bbtools.yaml"
     shell:
         """
         clumpify.sh \
@@ -479,7 +479,7 @@ rule viromeqc:
         mem_mb = 16000,
         time_min = 360
     conda:
-        "envs/viromeqc.yaml"
+        "../envs/viromeqc.yaml"
     shell:
         """
         viromeQC.py \
@@ -504,7 +504,7 @@ rule final_fastqc:
         f"{OUTDIR}/logs/fastqc_final/{{sample}}.log"
     threads: 2
     conda:
-        "envs/qc.yaml"
+        "../envs/qc.yaml"
     shell:
         """
         fastqc -t {threads} -o $(dirname {output.html_r1}) {input.r1} {input.r2} 2>&1 | tee {log}
@@ -555,7 +555,7 @@ rule count_reads:
     params:
         pcr_dedup_enabled = config.get("deduplication", {}).get("pcr", {}).get("enabled", False)
     conda:
-        "envs/qc.yaml"
+        "../envs/qc.yaml"
     shell:
         """
         echo -e "sample\tstep\treads" > {output}
@@ -604,9 +604,9 @@ rule aggregate_contamination_stats:
     output:
         f"{OUTDIR}/reports/contamination_summary.tsv"
     conda:
-        "envs/qc.yaml"
+        "../envs/qc.yaml"
     script:
-        "scripts/aggregate_contamination_stats.py"
+        "../scripts/aggregate_contamination_stats.py"
 
 rule plot_contamination:
     """
@@ -628,9 +628,9 @@ rule plot_contamination:
     params:
         output_prefix = f"{OUTDIR}/reports/contamination"
     conda:
-        "envs/qc.yaml"
+        "../envs/qc.yaml"
     script:
-        "scripts/plot_contamination.py"
+        "../scripts/plot_contamination.py"
 
 rule analyze_primer_b_contamination:
     """
@@ -654,9 +654,9 @@ rule analyze_primer_b_contamination:
         sample_assignments = config["primer_b"].get("sample_assignments", None),
         contamination_threshold = config["primer_b"]["contamination_threshold"]
     conda:
-        "envs/qc.yaml"
+        "../envs/qc.yaml"
     script:
-        "scripts/analyze_primer_b_contamination.py"
+        "../scripts/analyze_primer_b_contamination.py"
 
 rule plot_primer_b_heatmap:
     """
@@ -671,9 +671,9 @@ rule plot_primer_b_heatmap:
     output:
         heatmap = f"{OUTDIR}/reports/primer_b_heatmap.png"
     conda:
-        "envs/qc.yaml"
+        "../envs/qc.yaml"
     script:
-        "scripts/plot_primer_b_heatmap.py"
+        "../scripts/plot_primer_b_heatmap.py"
 
 rule qc_flags:
     """
@@ -689,9 +689,9 @@ rule qc_flags:
     output:
         f"{OUTDIR}/reports/sample_qc_flags.tsv"
     conda:
-        "envs/qc.yaml"
+        "../envs/qc.yaml"
     script:
-        "scripts/generate_qc_flags.py"
+        "../scripts/generate_qc_flags.py"
 
 rule multiqc:
     """
@@ -719,7 +719,7 @@ rule multiqc:
     log:
         f"{OUTDIR}/logs/multiqc.log"
     conda:
-        "envs/qc.yaml"
+        "../envs/qc.yaml"
     shell:
         """
         multiqc \
