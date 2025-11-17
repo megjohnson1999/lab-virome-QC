@@ -632,6 +632,49 @@ rule plot_contamination:
     script:
         "scripts/plot_contamination.py"
 
+rule analyze_primer_b_contamination:
+    """
+    Analyze primer B cross-contamination across all samples
+
+    Parses BBDuk stats from primer B removal steps to detect cross-contamination.
+    Each sample should have primarily one primer B variant; multiple variants
+    indicate cross-contamination during library prep or sequencing.
+
+    Outputs:
+    - Summary table with dominant primer B and contamination metrics
+    - Distribution data for heatmap visualization
+    """
+    input:
+        step1 = expand(f"{OUTDIR}/primer_b/stats/step1/{{sample}}_pb_fwd_stats.txt", sample=SAMPLES),
+        step2 = expand(f"{OUTDIR}/primer_b/stats/step2/{{sample}}_pb_rc_stats.txt", sample=SAMPLES)
+    output:
+        summary = f"{OUTDIR}/reports/primer_b_contamination_summary.tsv",
+        distribution = f"{OUTDIR}/reports/primer_b_distribution.tsv"
+    params:
+        sample_assignments = config["primer_b"].get("sample_assignments", None),
+        contamination_threshold = config["primer_b"]["contamination_threshold"]
+    conda:
+        "envs/qc.yaml"
+    script:
+        "scripts/analyze_primer_b_contamination.py"
+
+rule plot_primer_b_heatmap:
+    """
+    Generate primer B cross-contamination heatmap
+
+    Creates a heatmap showing primer B variant distribution across samples.
+    Helps identify cross-contamination patterns and verify sample identity.
+    """
+    input:
+        distribution = f"{OUTDIR}/reports/primer_b_distribution.tsv",
+        summary = f"{OUTDIR}/reports/primer_b_contamination_summary.tsv"
+    output:
+        heatmap = f"{OUTDIR}/reports/primer_b_heatmap.png"
+    conda:
+        "envs/qc.yaml"
+    script:
+        "scripts/plot_primer_b_heatmap.py"
+
 rule qc_flags:
     """
     Generate QC pass/fail flags for each sample based on:
