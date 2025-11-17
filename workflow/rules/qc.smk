@@ -209,6 +209,105 @@ rule flag_univec:
             2>&1 | tee {log}
         """
 
+rule remove_primer_b_forward:
+    """
+    Remove forward primer B sequences using left-side trimming
+
+    Step 1 of 2-step primer B removal process. Removes forward primer B sequences
+    that may contaminate the 5' end of reads. Each sample should have primarily one
+    primer B variant; presence of multiple variants indicates cross-contamination.
+
+    This step generates stats for downstream cross-contamination analysis.
+    """
+    input:
+        r1 = f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/fastp/{{sample}}_R2.fastq.gz"
+    output:
+        r1 = temp(f"{OUTDIR}/primer_b/step1/{{sample}}_R1.fastq.gz"),
+        r2 = temp(f"{OUTDIR}/primer_b/step1/{{sample}}_R2.fastq.gz"),
+        stats = f"{OUTDIR}/primer_b/stats/step1/{{sample}}_pb_fwd_stats.txt"
+    log:
+        f"{OUTDIR}/logs/primer_b/{{sample}}_step1.log"
+    threads: 4
+    resources:
+        mem_mb = 8000
+    params:
+        ref = REFERENCES["primer_b_forward"],
+        ktrim = config["primer_b"]["bbduk_forward"]["ktrim"],
+        k = config["primer_b"]["bbduk_forward"]["k"],
+        mink = config["primer_b"]["bbduk_forward"]["mink"],
+        rcomp = config["primer_b"]["bbduk_forward"]["rcomp"],
+        ordered = config["primer_b"]["bbduk_forward"]["ordered"],
+        ow = config["primer_b"]["bbduk_forward"]["ow"]
+    conda:
+        "envs/bbtools.yaml"
+    shell:
+        """
+        bbduk.sh \
+            in1={input.r1} in2={input.r2} \
+            out1={output.r1} out2={output.r2} \
+            ref={params.ref} \
+            stats={output.stats} \
+            ktrim={params.ktrim} \
+            k={params.k} \
+            mink={params.mink} \
+            rcomp={params.rcomp} \
+            ordered={params.ordered} \
+            ow={params.ow} \
+            threads={threads} \
+            -Xmx{resources.mem_mb}m \
+            2>&1 | tee {log}
+        """
+
+rule remove_primer_b_rc:
+    """
+    Remove reverse complement primer B sequences using right-side trimming
+
+    Step 2 of 2-step primer B removal process. Removes reverse complement primer B
+    sequences that may contaminate the 3' end of reads after step 1.
+
+    This step generates stats for downstream cross-contamination analysis.
+    """
+    input:
+        r1 = f"{OUTDIR}/primer_b/step1/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/primer_b/step1/{{sample}}_R2.fastq.gz"
+    output:
+        r1 = temp(f"{OUTDIR}/primer_b/step2/{{sample}}_R1.fastq.gz"),
+        r2 = temp(f"{OUTDIR}/primer_b/step2/{{sample}}_R2.fastq.gz"),
+        stats = f"{OUTDIR}/primer_b/stats/step2/{{sample}}_pb_rc_stats.txt"
+    log:
+        f"{OUTDIR}/logs/primer_b/{{sample}}_step2.log"
+    threads: 4
+    resources:
+        mem_mb = 8000
+    params:
+        ref = REFERENCES["primer_b_rc"],
+        ktrim = config["primer_b"]["bbduk_rc"]["ktrim"],
+        k = config["primer_b"]["bbduk_rc"]["k"],
+        mink = config["primer_b"]["bbduk_rc"]["mink"],
+        rcomp = config["primer_b"]["bbduk_rc"]["rcomp"],
+        ordered = config["primer_b"]["bbduk_rc"]["ordered"],
+        ow = config["primer_b"]["bbduk_rc"]["ow"]
+    conda:
+        "envs/bbtools.yaml"
+    shell:
+        """
+        bbduk.sh \
+            in1={input.r1} in2={input.r2} \
+            out1={output.r1} out2={output.r2} \
+            ref={params.ref} \
+            stats={output.stats} \
+            ktrim={params.ktrim} \
+            k={params.k} \
+            mink={params.mink} \
+            rcomp={params.rcomp} \
+            ordered={params.ordered} \
+            ow={params.ow} \
+            threads={threads} \
+            -Xmx{resources.mem_mb}m \
+            2>&1 | tee {log}
+        """
+
 rule host_depletion:
     """
     Remove host genome sequences using minimap2
@@ -218,13 +317,13 @@ rule host_depletion:
     1. Remove host sequences from analysis
     2. QC metric for VLP enrichment success
 
-    Note: Now operates directly on fastp output (PhiX/vector flagging doesn't filter reads)
+    Note: Now operates after primer B removal (PhiX/vector flagging doesn't filter reads)
     Note: Minimap2 loads host genome index (~12GB for human) plus read processing
           Allocated 24GB to handle large samples
     """
     input:
-        r1 = f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz",
-        r2 = f"{OUTDIR}/fastp/{{sample}}_R2.fastq.gz",
+        r1 = f"{OUTDIR}/primer_b/step2/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/primer_b/step2/{{sample}}_R2.fastq.gz",
         host_ref = REFERENCES["host_genome"],
         # Ensure contamination flagging happens first (for workflow ordering)
         phix_stats = f"{OUTDIR}/contamination_flagging/phix/{{sample}}_phix_stats.txt",
@@ -294,6 +393,59 @@ rule remove_rrna:
             threads={threads} \
             -Xmx{resources.mem_mb}m \
             2>&1 | tee {log}
+        """
+
+rule remove_pcr_duplicates:
+    """
+    Remove PCR duplicates using clumpify.sh from BBTools
+
+    For Round A/B virome data with 40 cycles of PCR, this step removes
+    PCR duplicates, getting closer to "unique molecules present" rather
+    than "PCR-amplified copies."
+
+    Placement rationale:
+    - Last QC step (after all quality filtering and rRNA removal)
+    - Quality filtering has already removed error-containing reads
+    - More accurate duplicate detection on clean viral reads
+    - Prevents keeping "wrong" copies with sequencing errors
+
+    Optional: Controlled by config['deduplication']['pcr']['enabled']
+    - Enable for high-cycle PCR data (Round A/B with 40 cycles)
+    - Disable for non-PCR or low-cycle data
+
+    Note: Uses exact matching for duplicate detection (dedupe optical=f).
+          This is appropriate here because quality filtering has already
+          removed error-containing reads, so remaining sequence variation
+          likely represents real biological diversity (viral quasispecies)
+          rather than PCR/sequencing errors.
+    """
+    input:
+        r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/rrna_removed/{{sample}}_R2.fastq.gz"
+    output:
+        r1 = temp(f"{OUTDIR}/pcr_deduplicated/{{sample}}_R1.fastq.gz"),
+        r2 = temp(f"{OUTDIR}/pcr_deduplicated/{{sample}}_R2.fastq.gz"),
+        stats = f"{OUTDIR}/pcr_deduplicated/{{sample}}_pcr_dup_stats.txt"
+    log:
+        f"{OUTDIR}/logs/pcr_deduplication/{{sample}}.log"
+    threads: 8
+    resources:
+        mem_mb = 32000  # Similar to rRNA removal, scales with read count
+    conda:
+        "envs/bbtools.yaml"
+    shell:
+        """
+        clumpify.sh \
+            in1={input.r1} in2={input.r2} \
+            out1={output.r1} out2={output.r2} \
+            dedupe optical=f \
+            threads={threads} \
+            -Xmx{resources.mem_mb}m \
+            2>&1 | tee {log}
+
+        # Extract stats for reporting
+        # clumpify.sh outputs stats to stderr/stdout, captured in log
+        grep -E "^(Input|Duplicates|Result)" {log} > {output.stats} || true
         """
 
 rule viromeqc:
@@ -382,19 +534,26 @@ rule count_reads:
     """
     Count reads at each QC step for tracking
 
+    Tracks reads through the full pipeline including primer B removal
     Note: phix_removed step removed since we now flag instead of filter
+    Note: Conditionally includes pcr_deduplicated step if enabled
     Note: Can take several hours for large samples (50M+ reads)
     """
     input:
         raw_r1 = lambda wc: SAMPLES[wc.sample]["r1"],
         clumpify_r1 = f"{OUTDIR}/clumpify/{{sample}}_R1.fastq.gz",
         fastp_r1 = f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz",
+        pb_step1_r1 = f"{OUTDIR}/primer_b/step1/{{sample}}_R1.fastq.gz",
+        pb_step2_r1 = f"{OUTDIR}/primer_b/step2/{{sample}}_R1.fastq.gz",
         host_r1 = f"{OUTDIR}/host_depleted/{{sample}}_R1.fastq.gz",
-        rrna_r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz"
+        rrna_r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz",
+        pcr_dedup_r1 = lambda wc: f"{OUTDIR}/pcr_deduplicated/{wc.sample}_R1.fastq.gz" if config.get("deduplication", {}).get("pcr", {}).get("enabled", False) else []
     output:
         temp(f"{OUTDIR}/reports/read_counts/{{sample}}.tsv")
     resources:
         time_min = 360
+    params:
+        pcr_dedup_enabled = config.get("deduplication", {}).get("pcr", {}).get("enabled", False)
     conda:
         "envs/qc.yaml"
     shell:
@@ -403,8 +562,18 @@ rule count_reads:
         echo -e "{wildcards.sample}\traw\t$(zcat {input.raw_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         echo -e "{wildcards.sample}\tclumpify\t$(zcat {input.clumpify_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         echo -e "{wildcards.sample}\tfastp\t$(zcat {input.fastp_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
+        echo -e "{wildcards.sample}\tprimer_b_fwd\t$(zcat {input.pb_step1_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
+        echo -e "{wildcards.sample}\tprimer_b_rc\t$(zcat {input.pb_step2_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         echo -e "{wildcards.sample}\thost_depleted\t$(zcat {input.host_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
-        echo -e "{wildcards.sample}\tclean\t$(zcat {input.rrna_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
+        echo -e "{wildcards.sample}\trrna_removed\t$(zcat {input.rrna_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
+
+        # Conditionally add PCR dedup stats
+        if [ "{params.pcr_dedup_enabled}" = "True" ]; then
+            echo -e "{wildcards.sample}\tpcr_deduplicated\t$(zcat {input.pcr_dedup_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
+            echo -e "{wildcards.sample}\tclean\t$(zcat {input.pcr_dedup_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
+        else
+            echo -e "{wildcards.sample}\tclean\t$(zcat {input.rrna_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
+        fi
         """
 
 rule merge_read_counts:

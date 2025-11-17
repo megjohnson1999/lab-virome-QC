@@ -139,6 +139,9 @@ def get_final_outputs():
             f"{OUTDIR}/reports/contamination_boxes.png",
             f"{OUTDIR}/reports/contamination_scatter.png",
             f"{OUTDIR}/reports/contamination_heatmap.png",
+            # Primer B cross-contamination analysis
+            f"{OUTDIR}/reports/primer_b_contamination_summary.tsv",
+            f"{OUTDIR}/reports/primer_b_heatmap.png",
             # Clean reads checkpoint
             expand(f"{OUTDIR}/clean_reads/{{sample}}_R1_clean.fastq.gz", sample=SAMPLES),
             expand(f"{OUTDIR}/clean_reads/{{sample}}_R2_clean.fastq.gz", sample=SAMPLES),
