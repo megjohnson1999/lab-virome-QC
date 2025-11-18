@@ -9,71 +9,6 @@ Output: Cleaned paired-end reads in {OUTDIR}/clean_reads/
 """
 
 # ================================================================================
-# Helper Functions for Conditional temp() Marking
-# ================================================================================
-
-def get_rrna_output_spec(wildcards):
-    """
-    Return output specification for rRNA removal with conditional temp() marking.
-
-    Logic:
-    - If PCR dedup enabled: always temp (intermediate files)
-    - If PCR dedup disabled + assembly disabled: NOT temp (final clean reads)
-    - If PCR dedup disabled + assembly enabled: temp (consumed by bbmerge)
-    """
-    pcr_dedup_enabled = config.get("deduplication", {}).get("pcr", {}).get("enabled", False)
-    assembly_enabled = config.get("pipeline", {}).get("run_assembly", False)
-
-    r1_path = f"{OUTDIR}/rrna_removed/{wildcards.sample}_R1.fastq.gz"
-    r2_path = f"{OUTDIR}/rrna_removed/{wildcards.sample}_R2.fastq.gz"
-    stats_path = f"{OUTDIR}/rrna_removed/{wildcards.sample}_rrna_stats.txt"
-
-    # Always temp if PCR dedup enabled (intermediate) or assembly enabled (consumed)
-    if pcr_dedup_enabled or assembly_enabled:
-        return {
-            "r1": temp(r1_path),
-            "r2": temp(r2_path),
-            "stats": stats_path
-        }
-    else:
-        # Final clean reads - must persist
-        return {
-            "r1": r1_path,
-            "r2": r2_path,
-            "stats": stats_path
-        }
-
-
-def get_pcr_dedup_output_spec(wildcards):
-    """
-    Return output specification for PCR deduplication with conditional temp() marking.
-
-    Logic:
-    - If assembly enabled: temp (consumed by bbmerge)
-    - If assembly disabled: NOT temp (final clean reads)
-    """
-    assembly_enabled = config.get("pipeline", {}).get("run_assembly", False)
-
-    r1_path = f"{OUTDIR}/pcr_deduplicated/{wildcards.sample}_R1.fastq.gz"
-    r2_path = f"{OUTDIR}/pcr_deduplicated/{wildcards.sample}_R2.fastq.gz"
-    stats_path = f"{OUTDIR}/pcr_deduplicated/{wildcards.sample}_pcr_dup_stats.txt"
-
-    if assembly_enabled:
-        # Assembly will consume these files
-        return {
-            "r1": temp(r1_path),
-            "r2": temp(r2_path),
-            "stats": stats_path
-        }
-    else:
-        # Final clean reads - must persist
-        return {
-            "r1": r1_path,
-            "r2": r2_path,
-            "stats": stats_path
-        }
-
-# ================================================================================
 # FastQC and Quality Assessment
 # ================================================================================
 
@@ -431,15 +366,17 @@ rule remove_rrna:
           Additional memory needed for read processing on large samples
           Allocated 32GB to handle database + up to 95M reads
 
-    Output files are conditionally marked as temp():
-    - temp() if PCR dedup enabled (intermediate) or assembly enabled (consumed)
-    - NOT temp() if these are the final clean reads (no PCR dedup, no assembly)
+    Note: Files not marked as temp() to avoid broken symlinks in QC-only mode.
+          These may be intermediate (when PCR dedup enabled) or final clean reads.
+          Symlinks in clean_reads/ always point to the true final outputs.
     """
     input:
         r1 = f"{OUTDIR}/host_depleted/{{sample}}_R1.fastq.gz",
         r2 = f"{OUTDIR}/host_depleted/{{sample}}_R2.fastq.gz"
     output:
-        unpack(get_rrna_output_spec)
+        r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/rrna_removed/{{sample}}_R2.fastq.gz",
+        stats = f"{OUTDIR}/rrna_removed/{{sample}}_rrna_stats.txt"
     log:
         f"{OUTDIR}/logs/rrna_removal/{{sample}}.log"
     threads: 4
@@ -486,15 +423,16 @@ rule remove_pcr_duplicates:
           likely represents real biological diversity (viral quasispecies)
           rather than PCR/sequencing errors.
 
-    Output files are conditionally marked as temp():
-    - temp() if assembly enabled (consumed by bbmerge)
-    - NOT temp() if these are the final clean reads (no assembly)
+    Note: Files not marked as temp() to avoid broken symlinks in QC-only mode.
+          When enabled, these are the final clean reads accessed via symlinks.
     """
     input:
         r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz",
         r2 = f"{OUTDIR}/rrna_removed/{{sample}}_R2.fastq.gz"
     output:
-        unpack(get_pcr_dedup_output_spec)
+        r1 = f"{OUTDIR}/pcr_deduplicated/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/pcr_deduplicated/{{sample}}_R2.fastq.gz",
+        stats = f"{OUTDIR}/pcr_deduplicated/{{sample}}_pcr_dup_stats.txt"
     log:
         f"{OUTDIR}/logs/pcr_deduplication/{{sample}}.log"
     threads: 8
