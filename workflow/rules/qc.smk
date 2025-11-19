@@ -536,8 +536,8 @@ rule symlink_clean_reads:
             else f"{OUTDIR}/rrna_removed/{wc.sample}_R2.fastq.gz"
         )
     output:
-        r1 = f"{OUTDIR}/clean_reads/{{sample}}_R1_clean.fastq.gz",
-        r2 = f"{OUTDIR}/clean_reads/{{sample}}_R2_clean.fastq.gz"
+        r1 = f"{OUTDIR}/clean_reads/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/clean_reads/{{sample}}_R2.fastq.gz"
     shell:
         """
         ln -sf $(readlink -f {input.r1}) {output.r1}
