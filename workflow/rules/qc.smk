@@ -1,236 +1,74 @@
 """
-Lab Virome QC Pipeline - Modular Version
-=========================================
+Quality Control Module
+======================
 
-A modular, flexible pipeline for virome data QC and assembly.
+QC rules for virome data preprocessing.
 
-Pipeline Modes:
-1. Full pipeline: QC → Assembly
-2. QC only: Stop after generating cleaned reads
-3. Assembly from cleaned reads: Skip QC, start with user-provided cleaned reads
-4. From contigs: Skip QC and assembly (future feature)
-
-Author: Lab Virome QC Team
-License: MIT
+Input: Raw paired-end reads
+Output: Cleaned paired-end reads in {OUTDIR}/clean_reads/
 """
 
-import os
-import sys
-from pathlib import Path
-
-# Add scripts directory to Python path
-workflow_dir = Path(workflow.basedir)
-scripts_dir = workflow_dir / "scripts"
-sys.path.insert(0, str(scripts_dir))
-
-from sample_utils import get_samples
-
 # ================================================================================
-# Configuration and Validation
+# FastQC and Quality Assessment
 # ================================================================================
 
-configfile: "config/config.yaml"
-
-# Sample information
-SAMPLES = get_samples(config)
-
-# Output directory
-OUTDIR = config["output_dir"]
-
-# Reference paths
-REFERENCES = config["references"]
-
-# Pipeline control
-PIPELINE_CONFIG = config.get("pipeline", {})
-START_FROM = PIPELINE_CONFIG.get("start_from", "raw_reads")
-RUN_ASSEMBLY = PIPELINE_CONFIG.get("run_assembly", False)
-ASSEMBLY_STRATEGY = PIPELINE_CONFIG.get("assembly_strategy", "coassembly")
-
-# ================================================================================
-# Configuration Validation
-# ================================================================================
-
-def validate_config():
-    """Validate pipeline configuration and provide helpful error messages"""
-
-    # Check start_from value
-    valid_start_points = ["raw_reads", "cleaned_reads", "contigs"]
-    if START_FROM not in valid_start_points:
-        raise ValueError(
-            f"Invalid pipeline.start_from: '{START_FROM}'. "
-            f"Must be one of: {valid_start_points}"
-        )
-
-    # If starting from cleaned reads, need cleaned_reads_dir
-    if START_FROM == "cleaned_reads":
-        if "cleaned_reads_dir" not in PIPELINE_CONFIG or not PIPELINE_CONFIG["cleaned_reads_dir"]:
-            raise ValueError(
-                "pipeline.start_from='cleaned_reads' but pipeline.cleaned_reads_dir not specified!\n"
-                "Please add: pipeline:\n  cleaned_reads_dir: 'path/to/cleaned/reads'"
-            )
-
-        # Check if directory exists
-        cleaned_dir = PIPELINE_CONFIG["cleaned_reads_dir"]
-        if not os.path.exists(cleaned_dir):
-            raise FileNotFoundError(
-                f"pipeline.cleaned_reads_dir does not exist: {cleaned_dir}"
-            )
-
-    # Check assembly strategy
-    valid_strategies = ["coassembly", "individual"]
-    if ASSEMBLY_STRATEGY not in valid_strategies:
-        raise ValueError(
-            f"Invalid pipeline.assembly_strategy: '{ASSEMBLY_STRATEGY}'. "
-            f"Must be one of: {valid_strategies}"
-        )
-
-    # Warn if assembly is requested but starting from contigs
-    if START_FROM == "contigs" and RUN_ASSEMBLY:
-        print("WARNING: pipeline.run_assembly=true but start_from='contigs'. Assembly will be skipped.")
-
-    print(f"✓ Configuration valid")
-    print(f"  Start from: {START_FROM}")
-    print(f"  Run assembly: {RUN_ASSEMBLY}")
-    if RUN_ASSEMBLY:
-        print(f"  Assembly strategy: {ASSEMBLY_STRATEGY}")
-
-# Run validation
-validate_config()
-
-# ================================================================================
-# Module Imports
-# ================================================================================
-
-# Always include QC module rules (even if starting from cleaned reads,
-# we need the rule definitions for dependency resolution)
-include: "rules/qc.smk"
-
-# Include assembly module if assembly is requested
-if RUN_ASSEMBLY:
-    include: "rules/assembly.smk"
-
-# ================================================================================
-# Target Rule - Conditional Outputs
-# ================================================================================
-
-def get_final_outputs():
+rule fastqc_raw:
     """
-    Determine final outputs based on pipeline configuration
-
-    Returns list of files that should be generated
+    Run FastQC on raw reads to assess initial quality and identify artifacts
     """
-    outputs = []
-
-    # ===== QC Outputs =====
-    # Include QC outputs if starting from raw reads
-    if START_FROM == "raw_reads":
-        outputs.extend([
-            # Final QC report
-            f"{OUTDIR}/multiqc/multiqc_report.html",
-            # ViromeQC results
-            expand(f"{OUTDIR}/viromeqc/{{sample}}_viromeqc.txt", sample=SAMPLES),
-            # Read count tracking
-            f"{OUTDIR}/reports/read_counts.tsv",
-            # Sample QC flags
-            f"{OUTDIR}/reports/sample_qc_flags.tsv",
-            # Contamination flagging
-            f"{OUTDIR}/reports/contamination_summary.tsv",
-            f"{OUTDIR}/reports/contamination_bars.png",
-            f"{OUTDIR}/reports/contamination_boxes.png",
-            f"{OUTDIR}/reports/contamination_scatter.png",
-            f"{OUTDIR}/reports/contamination_heatmap.png",
-            # Primer B cross-contamination analysis
-            f"{OUTDIR}/reports/primer_b_contamination_summary.tsv",
-            f"{OUTDIR}/reports/primer_b_heatmap.png",
-            # Clean reads checkpoint
-            expand(f"{OUTDIR}/clean_reads/{{sample}}_R1.fastq.gz", sample=SAMPLES),
-            expand(f"{OUTDIR}/clean_reads/{{sample}}_R2.fastq.gz", sample=SAMPLES),
-        ])
-
-    # ===== Assembly Outputs =====
-    # Include assembly outputs if assembly is requested and not starting from contigs
-    if RUN_ASSEMBLY and START_FROM != "contigs":
-        # BBMerge outputs (needed for assembly)
-        outputs.extend(
-            expand(f"{OUTDIR}/bbmerge/{{sample}}_merged.fastq.gz", sample=SAMPLES)
-        )
-        outputs.extend(
-            expand(f"{OUTDIR}/bbmerge/{{sample}}_R1_unmerged.fastq.gz", sample=SAMPLES)
-        )
-        outputs.extend(
-            expand(f"{OUTDIR}/bbmerge/{{sample}}_R2_unmerged.fastq.gz", sample=SAMPLES)
-        )
-
-        # Assembly outputs
-        if ASSEMBLY_STRATEGY == "coassembly":
-            outputs.extend([
-                f"{OUTDIR}/assembly/megahit/final.contigs.fa",
-                f"{OUTDIR}/assembly/final.contigs.fa",  # Convenience symlink
-                f"{OUTDIR}/reports/assembly_stats.tsv"
-            ])
-        elif ASSEMBLY_STRATEGY == "individual":
-            outputs.extend(
-                expand(f"{OUTDIR}/assembly/per_sample/{{sample}}/final.contigs.fa", sample=SAMPLES)
-            )
-            outputs.append(f"{OUTDIR}/reports/assembly_stats.tsv")
-
-    return outputs
-
-
-rule all:
     input:
-        # Final QC report
-        f"{OUTDIR}/multiqc/multiqc_report.html",
-        # ViromeQC results
-        expand(f"{OUTDIR}/viromeqc/{{sample}}_viromeqc.txt", sample=SAMPLES),
-        # Read count tracking
-        f"{OUTDIR}/reports/read_counts.tsv",
-        # Sample QC flags
-        f"{OUTDIR}/reports/sample_qc_flags.tsv",
-        # Contamination flagging summary
-        f"{OUTDIR}/reports/contamination_summary.tsv",
-        # Contamination plots
-        f"{OUTDIR}/reports/contamination_bars.png",
-        f"{OUTDIR}/reports/contamination_boxes.png",
-        f"{OUTDIR}/reports/contamination_scatter.png",
-        f"{OUTDIR}/reports/contamination_heatmap.png",
-        # Primer B cross-contamination analysis
-        f"{OUTDIR}/reports/primer_b_contamination_summary.tsv",
-        f"{OUTDIR}/reports/primer_b_heatmap.png"
+        r1 = lambda wc: SAMPLES[wc.sample]["r1"],
+        r2 = lambda wc: SAMPLES[wc.sample]["r2"]
+    output:
+        html_r1 = f"{OUTDIR}/fastqc/raw/{{sample}}_R1_fastqc.html",
+        html_r2 = f"{OUTDIR}/fastqc/raw/{{sample}}_R2_fastqc.html",
+        zip_r1 = f"{OUTDIR}/fastqc/raw/{{sample}}_R1_fastqc.zip",
+        zip_r2 = f"{OUTDIR}/fastqc/raw/{{sample}}_R2_fastqc.zip"
+    log:
+        f"{OUTDIR}/logs/fastqc_raw/{{sample}}.log"
+    threads: 2
+    conda:
+        "../envs/qc.yaml"
+    shell:
+        """
+        fastqc -t {threads} -o $(dirname {output.html_r1}) {input.r1} {input.r2} 2>&1 | tee {log}
+        """
 
-# ================================================================================
-# Pipeline Summary
-# ================================================================================
+rule clumpify_optical_duplicates:
+    """
+    Remove optical duplicates using Clumpify (BBTools)
+    These are Illumina sequencing artifacts from patterned flow cells
 
-onstart:
-    print("\n" + "="*80)
-    print("Lab Virome QC Pipeline - Modular Version")
-    print("="*80)
-    print(f"Pipeline configuration:")
-    print(f"  Start from: {START_FROM}")
-    print(f"  Run assembly: {RUN_ASSEMBLY}")
-    if RUN_ASSEMBLY:
-        print(f"  Assembly strategy: {ASSEMBLY_STRATEGY}")
-    print(f"  Samples: {len(SAMPLES)}")
-    print(f"  Output directory: {OUTDIR}")
-    print("="*80 + "\n")
+    Note: Memory requirement scales with read count (~0.5GB per million reads)
+          Allocated 48GB to handle samples up to ~95 million reads
+    """
+    input:
+        r1 = lambda wc: SAMPLES[wc.sample]["r1"],
+        r2 = lambda wc: SAMPLES[wc.sample]["r2"]
+    output:
+        r1 = temp(f"{OUTDIR}/clumpify/{{sample}}_R1.fastq.gz"),
+        r2 = temp(f"{OUTDIR}/clumpify/{{sample}}_R2.fastq.gz")
+    log:
+        f"{OUTDIR}/logs/clumpify/{{sample}}.log"
+    threads: 8
+    resources:
+        mem_mb = 48000
+    conda:
+        "../envs/bbtools.yaml"
+    shell:
+        """
+        clumpify.sh \
+            in1={input.r1} in2={input.r2} \
+            out1={output.r1} out2={output.r2} \
+            dedupe optical \
+            threads={threads} \
+            -Xmx{resources.mem_mb}m \
+            2>&1 | tee {log}
+        """
 
-
-onsuccess:
-    print("\n" + "="*80)
-    print("✓ Pipeline completed successfully!")
-    print("="*80)
-    print(f"Outputs available in: {OUTDIR}")
-    if START_FROM == "raw_reads":
-        print(f"  - QC reports: {OUTDIR}/reports/")
-        print(f"  - Clean reads: {OUTDIR}/clean_reads/")
-    if RUN_ASSEMBLY:
-        if ASSEMBLY_STRATEGY == "coassembly":
-            print(f"  - Assembly: {OUTDIR}/assembly/megahit/final.contigs.fa")
-        else:
-            print(f"  - Assemblies: {OUTDIR}/assembly/per_sample/*/final.contigs.fa")
-    print("="*80 + "\n")
-
+rule fastp_trim:
+    """
+    CRITICAL STEP: fastp with NovaSeq-specific settings
 
     1. PolyG tail removal (NovaSeq 2-channel chemistry artifact) - MUST BE FIRST
     2. Adapter trimming (auto-detect Illumina adapters)
@@ -255,7 +93,7 @@ onsuccess:
         min_length = config.get("min_read_length", 100),
         qual_threshold = config.get("quality_threshold", 20)
     conda:
-        "envs/qc.yaml"
+        "../envs/qc.yaml"
     shell:
         """
         fastp \
@@ -291,10 +129,84 @@ rule fastqc_trimmed:
         f"{OUTDIR}/logs/fastqc_trimmed/{{sample}}.log"
     threads: 2
     conda:
-        "envs/qc.yaml"
+        "../envs/qc.yaml"
     shell:
         """
         fastqc -t {threads} -o $(dirname {output.html_r1}) {input.r1} {input.r2} 2>&1 | tee {log}
+        """
+
+rule flag_phix:
+    """
+    Flag PhiX174 contamination without removing reads
+
+    For VLP-enriched viromes, we flag contamination rather than remove it to avoid
+    accidentally discarding legitimate viral sequences. This generates QC metrics
+    to identify samples with abnormal PhiX levels (which may indicate sequencing issues).
+
+    Uses BBDuk in detection-only mode to quantify PhiX contamination.
+    """
+    input:
+        r1 = f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/fastp/{{sample}}_R2.fastq.gz"
+    output:
+        stats = f"{OUTDIR}/contamination_flagging/phix/{{sample}}_phix_stats.txt"
+    log:
+        f"{OUTDIR}/logs/flag_phix/{{sample}}.log"
+    threads: 4
+    resources:
+        mem_mb = 8000
+    params:
+        phix_ref = REFERENCES["phix"]
+    conda:
+        "../envs/bbtools.yaml"
+    shell:
+        """
+        # Run bbduk in stats-only mode (no read filtering)
+        # Redirect stdout to /dev/null since we only want stats
+        bbduk.sh \
+            in1={input.r1} in2={input.r2} \
+            ref={params.phix_ref} \
+            k=31 hdist=1 \
+            stats={output.stats} \
+            threads={threads} \
+            -Xmx{resources.mem_mb}m \
+            2>&1 | tee {log}
+        """
+
+rule flag_univec:
+    """
+    Flag vector/plasmid contamination without removing reads
+
+    Checks for common cloning vectors, plasmids, and synthetic sequences that may
+    indicate laboratory contamination. Generates QC metrics to identify outlier samples.
+
+    Uses comprehensive UniVec-derived database including common lab vectors.
+    """
+    input:
+        r1 = f"{OUTDIR}/fastp/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/fastp/{{sample}}_R2.fastq.gz"
+    output:
+        stats = f"{OUTDIR}/contamination_flagging/univec/{{sample}}_univec_stats.txt"
+    log:
+        f"{OUTDIR}/logs/flag_univec/{{sample}}.log"
+    threads: 4
+    resources:
+        mem_mb = 8000
+    params:
+        vector_ref = REFERENCES["vector_contaminants"]
+    conda:
+        "../envs/bbtools.yaml"
+    shell:
+        """
+        # Run bbduk in stats-only mode to detect vector contamination
+        bbduk.sh \
+            in1={input.r1} in2={input.r2} \
+            ref={params.vector_ref} \
+            k=31 hdist=1 \
+            stats={output.stats} \
+            threads={threads} \
+            -Xmx{resources.mem_mb}m \
+            2>&1 | tee {log}
         """
 
 rule remove_primer_b_forward:
@@ -328,7 +240,7 @@ rule remove_primer_b_forward:
         ordered = config["primer_b"]["bbduk_forward"]["ordered"],
         ow = config["primer_b"]["bbduk_forward"]["ow"]
     conda:
-        "envs/bbtools.yaml"
+        "../envs/bbtools.yaml"
     shell:
         """
         bbduk.sh \
@@ -377,7 +289,7 @@ rule remove_primer_b_rc:
         ordered = config["primer_b"]["bbduk_rc"]["ordered"],
         ow = config["primer_b"]["bbduk_rc"]["ow"]
     conda:
-        "envs/bbtools.yaml"
+        "../envs/bbtools.yaml"
     shell:
         """
         bbduk.sh \
@@ -396,84 +308,6 @@ rule remove_primer_b_rc:
             2>&1 | tee {log}
         """
 
-rule flag_phix:
-    """
-    Flag PhiX174 contamination without removing reads
-
-    For VLP-enriched viromes, we flag contamination rather than remove it to avoid
-    accidentally discarding legitimate viral sequences. This generates QC metrics
-    to identify samples with abnormal PhiX levels (which may indicate sequencing issues).
-
-    Uses BBDuk in detection-only mode to quantify PhiX contamination.
-
-    Note: Runs on primer B-removed reads to avoid false positives from primer sequences.
-    """
-    input:
-        r1 = f"{OUTDIR}/primer_b/step2/{{sample}}_R1.fastq.gz",
-        r2 = f"{OUTDIR}/primer_b/step2/{{sample}}_R2.fastq.gz"
-    output:
-        stats = f"{OUTDIR}/contamination_flagging/phix/{{sample}}_phix_stats.txt"
-    log:
-        f"{OUTDIR}/logs/flag_phix/{{sample}}.log"
-    threads: 4
-    resources:
-        mem_mb = 8000
-    params:
-        phix_ref = REFERENCES["phix"]
-    conda:
-        "envs/bbtools.yaml"
-    shell:
-        """
-        # Run bbduk in stats-only mode (no read filtering)
-        # Redirect stdout to /dev/null since we only want stats
-        bbduk.sh \
-            in1={input.r1} in2={input.r2} \
-            ref={params.phix_ref} \
-            k=31 hdist=1 \
-            stats={output.stats} \
-            threads={threads} \
-            -Xmx{resources.mem_mb}m \
-            2>&1 | tee {log}
-        """
-
-rule flag_univec:
-    """
-    Flag vector/plasmid contamination without removing reads
-
-    Checks for common cloning vectors, plasmids, and synthetic sequences that may
-    indicate laboratory contamination. Generates QC metrics to identify outlier samples.
-
-    Uses comprehensive UniVec-derived database including common lab vectors.
-
-    Note: Runs on primer B-removed reads to avoid false positives from primer sequences.
-    """
-    input:
-        r1 = f"{OUTDIR}/primer_b/step2/{{sample}}_R1.fastq.gz",
-        r2 = f"{OUTDIR}/primer_b/step2/{{sample}}_R2.fastq.gz"
-    output:
-        stats = f"{OUTDIR}/contamination_flagging/univec/{{sample}}_univec_stats.txt"
-    log:
-        f"{OUTDIR}/logs/flag_univec/{{sample}}.log"
-    threads: 4
-    resources:
-        mem_mb = 8000
-    params:
-        vector_ref = REFERENCES["vector_contaminants"]
-    conda:
-        "envs/bbtools.yaml"
-    shell:
-        """
-        # Run bbduk in stats-only mode to detect vector contamination
-        bbduk.sh \
-            in1={input.r1} in2={input.r2} \
-            ref={params.vector_ref} \
-            k=31 hdist=1 \
-            stats={output.stats} \
-            threads={threads} \
-            -Xmx{resources.mem_mb}m \
-            2>&1 | tee {log}
-        """
-
 rule host_depletion:
     """
     Remove host genome sequences using minimap2
@@ -483,7 +317,7 @@ rule host_depletion:
     1. Remove host sequences from analysis
     2. QC metric for VLP enrichment success
 
-    Note: Operates on primer B-removed reads (PhiX/vector flagging doesn't filter reads)
+    Note: Now operates after primer B removal (PhiX/vector flagging doesn't filter reads)
     Note: Minimap2 loads host genome index (~12GB for human) plus read processing
           Allocated 24GB to handle large samples
     """
@@ -504,7 +338,7 @@ rule host_depletion:
     resources:
         mem_mb = 24000
     conda:
-        "envs/mapping.yaml"
+        "../envs/mapping.yaml"
     shell:
         """
         # Map to host genome
@@ -531,13 +365,17 @@ rule remove_rrna:
     Note: Full SILVA SSU+LSU database loads 123M kmers (~5GB)
           Additional memory needed for read processing on large samples
           Allocated 32GB to handle database + up to 95M reads
+
+    Note: Files not marked as temp() to avoid broken symlinks in QC-only mode.
+          These may be intermediate (when PCR dedup enabled) or final clean reads.
+          Symlinks in clean_reads/ always point to the true final outputs.
     """
     input:
         r1 = f"{OUTDIR}/host_depleted/{{sample}}_R1.fastq.gz",
         r2 = f"{OUTDIR}/host_depleted/{{sample}}_R2.fastq.gz"
     output:
-        r1 = temp(f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz"),
-        r2 = temp(f"{OUTDIR}/rrna_removed/{{sample}}_R2.fastq.gz"),
+        r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/rrna_removed/{{sample}}_R2.fastq.gz",
         stats = f"{OUTDIR}/rrna_removed/{{sample}}_rrna_stats.txt"
     log:
         f"{OUTDIR}/logs/rrna_removal/{{sample}}.log"
@@ -547,7 +385,7 @@ rule remove_rrna:
     params:
         rrna_ref = REFERENCES["rrna"]
     conda:
-        "envs/bbtools.yaml"
+        "../envs/bbtools.yaml"
     shell:
         """
         bbduk.sh \
@@ -584,13 +422,16 @@ rule remove_pcr_duplicates:
           removed error-containing reads, so remaining sequence variation
           likely represents real biological diversity (viral quasispecies)
           rather than PCR/sequencing errors.
+
+    Note: Files not marked as temp() to avoid broken symlinks in QC-only mode.
+          When enabled, these are the final clean reads accessed via symlinks.
     """
     input:
         r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz",
         r2 = f"{OUTDIR}/rrna_removed/{{sample}}_R2.fastq.gz"
     output:
-        r1 = temp(f"{OUTDIR}/pcr_deduplicated/{{sample}}_R1.fastq.gz"),
-        r2 = temp(f"{OUTDIR}/pcr_deduplicated/{{sample}}_R2.fastq.gz"),
+        r1 = f"{OUTDIR}/pcr_deduplicated/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/pcr_deduplicated/{{sample}}_R2.fastq.gz",
         stats = f"{OUTDIR}/pcr_deduplicated/{{sample}}_pcr_dup_stats.txt"
     log:
         f"{OUTDIR}/logs/pcr_deduplication/{{sample}}.log"
@@ -598,7 +439,7 @@ rule remove_pcr_duplicates:
     resources:
         mem_mb = 32000  # Similar to rRNA removal, scales with read count
     conda:
-        "envs/bbtools.yaml"
+        "../envs/bbtools.yaml"
     shell:
         """
         clumpify.sh \
@@ -643,9 +484,9 @@ rule viromeqc:
     threads: 4
     resources:
         mem_mb = 16000,
-        time_min = 720
+        time_min = 360
     conda:
-        "envs/viromeqc.yaml"
+        "../envs/viromeqc.yaml"
     shell:
         """
         viromeQC.py \
@@ -657,14 +498,10 @@ rule viromeqc:
 rule final_fastqc:
     """
     Final FastQC on clean reads
-
-    Input depends on PCR deduplication setting:
-    - If PCR dedup enabled: uses pcr_deduplicated reads
-    - If PCR dedup disabled: uses rrna_removed reads
     """
     input:
-        r1 = lambda wc: f"{OUTDIR}/pcr_deduplicated/{wc.sample}_R1.fastq.gz" if config.get("deduplication", {}).get("pcr", {}).get("enabled", False) else f"{OUTDIR}/rrna_removed/{wc.sample}_R1.fastq.gz",
-        r2 = lambda wc: f"{OUTDIR}/pcr_deduplicated/{wc.sample}_R2.fastq.gz" if config.get("deduplication", {}).get("pcr", {}).get("enabled", False) else f"{OUTDIR}/rrna_removed/{wc.sample}_R2.fastq.gz"
+        r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/rrna_removed/{{sample}}_R2.fastq.gz"
     output:
         html_r1 = f"{OUTDIR}/fastqc/final/{{sample}}_R1_fastqc.html",
         html_r2 = f"{OUTDIR}/fastqc/final/{{sample}}_R2_fastqc.html",
@@ -674,7 +511,7 @@ rule final_fastqc:
         f"{OUTDIR}/logs/fastqc_final/{{sample}}.log"
     threads: 2
     conda:
-        "envs/qc.yaml"
+        "../envs/qc.yaml"
     shell:
         """
         fastqc -t {threads} -o $(dirname {output.html_r1}) {input.r1} {input.r2} 2>&1 | tee {log}
@@ -684,16 +521,23 @@ rule symlink_clean_reads:
     """
     Create symlinks to final clean reads for easy access
 
-    Input depends on PCR deduplication setting:
-    - If PCR dedup enabled: uses pcr_deduplicated reads
-    - If PCR dedup disabled: uses rrna_removed reads
+    Links to either pcr_deduplicated or rrna_removed files depending on
+    whether PCR deduplication is enabled in the config.
     """
     input:
-        r1 = lambda wc: f"{OUTDIR}/pcr_deduplicated/{wc.sample}_R1.fastq.gz" if config.get("deduplication", {}).get("pcr", {}).get("enabled", False) else f"{OUTDIR}/rrna_removed/{wc.sample}_R1.fastq.gz",
-        r2 = lambda wc: f"{OUTDIR}/pcr_deduplicated/{wc.sample}_R2.fastq.gz" if config.get("deduplication", {}).get("pcr", {}).get("enabled", False) else f"{OUTDIR}/rrna_removed/{wc.sample}_R2.fastq.gz"
+        r1 = lambda wc: (
+            f"{OUTDIR}/pcr_deduplicated/{wc.sample}_R1.fastq.gz"
+            if config.get("deduplication", {}).get("pcr", {}).get("enabled", False)
+            else f"{OUTDIR}/rrna_removed/{wc.sample}_R1.fastq.gz"
+        ),
+        r2 = lambda wc: (
+            f"{OUTDIR}/pcr_deduplicated/{wc.sample}_R2.fastq.gz"
+            if config.get("deduplication", {}).get("pcr", {}).get("enabled", False)
+            else f"{OUTDIR}/rrna_removed/{wc.sample}_R2.fastq.gz"
+        )
     output:
-        r1 = f"{OUTDIR}/clean_reads/{{sample}}_R1_clean.fastq.gz",
-        r2 = f"{OUTDIR}/clean_reads/{{sample}}_R2_clean.fastq.gz"
+        r1 = f"{OUTDIR}/clean_reads/{{sample}}_R1.fastq.gz",
+        r2 = f"{OUTDIR}/clean_reads/{{sample}}_R2.fastq.gz"
     shell:
         """
         ln -sf $(readlink -f {input.r1}) {output.r1}
@@ -729,7 +573,7 @@ rule count_reads:
     params:
         pcr_dedup_enabled = config.get("deduplication", {}).get("pcr", {}).get("enabled", False)
     conda:
-        "envs/qc.yaml"
+        "../envs/qc.yaml"
     shell:
         """
         echo -e "sample\tstep\treads" > {output}
@@ -778,9 +622,9 @@ rule aggregate_contamination_stats:
     output:
         f"{OUTDIR}/reports/contamination_summary.tsv"
     conda:
-        "envs/qc.yaml"
+        "../envs/qc.yaml"
     script:
-        "scripts/aggregate_contamination_stats.py"
+        "../scripts/aggregate_contamination_stats.py"
 
 rule plot_contamination:
     """
@@ -802,9 +646,9 @@ rule plot_contamination:
     params:
         output_prefix = f"{OUTDIR}/reports/contamination"
     conda:
-        "envs/qc.yaml"
+        "../envs/qc.yaml"
     script:
-        "scripts/plot_contamination.py"
+        "../scripts/plot_contamination.py"
 
 rule analyze_primer_b_contamination:
     """
@@ -828,9 +672,9 @@ rule analyze_primer_b_contamination:
         sample_assignments = config["primer_b"].get("sample_assignments", None),
         contamination_threshold = config["primer_b"]["contamination_threshold"]
     conda:
-        "envs/qc.yaml"
+        "../envs/qc.yaml"
     script:
-        "scripts/analyze_primer_b_contamination.py"
+        "../scripts/analyze_primer_b_contamination.py"
 
 rule plot_primer_b_heatmap:
     """
@@ -845,9 +689,9 @@ rule plot_primer_b_heatmap:
     output:
         heatmap = f"{OUTDIR}/reports/primer_b_heatmap.png"
     conda:
-        "envs/qc.yaml"
+        "../envs/qc.yaml"
     script:
-        "scripts/plot_primer_b_heatmap.py"
+        "../scripts/plot_primer_b_heatmap.py"
 
 rule qc_flags:
     """
@@ -863,9 +707,9 @@ rule qc_flags:
     output:
         f"{OUTDIR}/reports/sample_qc_flags.tsv"
     conda:
-        "envs/qc.yaml"
+        "../envs/qc.yaml"
     script:
-        "scripts/generate_qc_flags.py"
+        "../scripts/generate_qc_flags.py"
 
 rule multiqc:
     """
@@ -893,7 +737,7 @@ rule multiqc:
     log:
         f"{OUTDIR}/logs/multiqc.log"
     conda:
-        "envs/qc.yaml"
+        "../envs/qc.yaml"
     shell:
         """
         multiqc \

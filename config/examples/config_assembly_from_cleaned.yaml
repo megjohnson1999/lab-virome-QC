@@ -1,0 +1,67 @@
+# =============================================================================
+# Example Config: Assembly from Pre-Cleaned Reads
+# =============================================================================
+# This configuration skips QC and starts assembly from pre-cleaned reads.
+# Use this when you already have cleaned reads from a previous QC run or
+# another pipeline.
+#
+# REQUIREMENTS:
+# - Cleaned reads must be in paired-end format:
+#   {sample}_R1.fastq.gz and {sample}_R2.fastq.gz
+# - Files must be in the directory specified by cleaned_reads_dir
+#
+# Usage: snakemake --configfile config/examples/config_assembly_from_cleaned.yaml
+# =============================================================================
+
+output_dir: "results_assembly_only"
+
+# Pipeline control
+pipeline:
+  start_from: "cleaned_reads"   # Skip QC, start from cleaned reads
+  run_assembly: true            # Run assembly module
+
+  # Assembly strategy (IMPORTANT: Choose based on your analysis goals)
+  # ----------------------------------------------------------------------------
+  # "coassembly" (RECOMMENDED for viromes):
+  #   - Pools all samples into a single community assembly
+  #   - Better for detecting rare viruses (increased depth across samples)
+  #   - Creates shared reference for viral community analysis
+  #   - Compatible with phage-analysis pipeline and other downstream tools
+  #   - Output: Single contigs file at results/assembly/megahit/final.contigs.fa
+  #
+  # "individual":
+  #   - Assembles each sample separately
+  #   - Use when samples represent different conditions/timepoints
+  #   - Better for sample-specific strain resolution
+  #   - Output: Multiple contig files at results/assembly/per_sample/{sample}/final.contigs.fa
+  # ----------------------------------------------------------------------------
+  assembly_strategy: "coassembly"
+
+  cleaned_reads_dir: "path/to/cleaned/reads"  # ⚠️ UPDATE THIS PATH!
+
+# Assembly parameters
+assembly:
+  min_contig_length: 1000       # Keep contigs >= 1kb
+
+# Samples - specify manually or use auto-detection
+# NOTE: Sample names must match filenames in cleaned_reads_dir
+samples:
+  sample1:
+    # Paths not used when start_from="cleaned_reads"
+    # But sample names must be defined
+    r1: "dummy"
+    r2: "dummy"
+  sample2:
+    r1: "dummy"
+    r2: "dummy"
+
+# OR use auto-detection (sample names from cleaned_reads_dir)
+# sample_auto_detection:
+#   enabled: true
+#   input_dir: "path/to/cleaned/reads"  # Same as cleaned_reads_dir
+#   r1_pattern: "*_R1.fastq.gz"
+#   r2_pattern: "*_R2.fastq.gz"
+
+resources:
+  default_threads: 8
+  default_mem_mb: 16000
