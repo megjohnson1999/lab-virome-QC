@@ -1,6 +1,6 @@
 # Lab Virome QC Pipeline
 
-A comprehensive quality control pipeline for VLP-enriched virome sequencing data generated from RdAB (Random displacement Amplification) protocol and Illumina NovaSeq sequencing.
+A comprehensive quality control and assembly pipeline for VLP-enriched virome sequencing data generated from RdAB (Random displacement Amplification) protocol and Illumina NovaSeq sequencing.
 
 ---
 
@@ -22,10 +22,14 @@ This Snakemake pipeline provides robust QC specifically designed for:
 ✅ **Optical duplicate removal** - Illumina patterned flow cell artifacts
 ✅ **Automated QC flagging** - Pass/fail criteria for each sample
 ✅ **Rich reporting** - MultiQC dashboard with all metrics
+✅ **Modular assembly** - Optional viral metagenome assembly (individual or coassembly strategies)
+✅ **Flexible entry points** - Start from raw reads or previously cleaned reads
 
 ---
 
 ## Pipeline Workflow
+
+### Full Pipeline (QC + Assembly)
 
 ```
 Raw Reads (NovaSeq FASTQ)
@@ -53,7 +57,19 @@ Raw Reads (NovaSeq FASTQ)
 [11] Contamination analysis (statistical outlier detection + plots)
     ↓
 Clean reads + QC reports + Sample flags + Contamination plots
+    ↓
+    ↓ [OPTIONAL: Assembly Module]
+    ↓
+[12] BBMerge (merge overlapping read pairs)
+    ↓
+[13] MEGAHIT assembly
+    │   ├─→ Individual assembly (per-sample assemblies)
+    │   └─→ Coassembly (all samples pooled)
+    ↓
+Assembled contigs + Assembly statistics
 ```
+
+**Note:** The pipeline is modular - you can run QC-only or QC + Assembly depending on your needs.
 
 ---
 
@@ -220,6 +236,114 @@ These allocations handle NovaSeq samples up to 100 million reads. For smaller da
 - **Runtime:** ~2-4 hours per sample (depends on sample size and cluster load)
 - **Storage:** ~10-20 GB per sample for intermediate files
 
+**Assembly Resource Requirements (if enabled):**
+
+| Step | Memory | Threads | Notes |
+|------|--------|---------|-------|
+| BBMerge | 16 GB | 8 | Merge overlapping read pairs |
+| MEGAHIT (individual) | 16-32 GB | 12-16 | Per-sample assembly |
+| MEGAHIT (coassembly) | 64-128 GB | 24 | Memory scales with total data |
+
+---
+
+### 5. Pipeline Modularity and Assembly Configuration
+
+The pipeline supports flexible entry points and optional assembly:
+
+#### Pipeline Modes
+
+**Mode 1: QC Only (default)**
+```yaml
+pipeline:
+  run_assembly: false  # or omit this line
+```
+Runs quality control only, outputs clean reads.
+
+**Mode 2: QC + Assembly**
+```yaml
+pipeline:
+  run_assembly: true
+  assembly_strategy: "individual"  # or "coassembly"
+```
+Runs complete QC followed by viral metagenome assembly.
+
+**Mode 3: Assembly from Existing Clean Reads**
+```yaml
+pipeline:
+  start_from: "cleaned_reads"
+  cleaned_reads_dir: "/path/to/clean_reads"
+  run_assembly: true
+  assembly_strategy: "individual"
+```
+Skips QC, uses existing clean reads for assembly. Useful for re-assembly with different parameters or trying different assembly strategies.
+
+#### Assembly Strategy Options
+
+**Individual Assembly** (recommended for most virome studies)
+```yaml
+assembly_strategy: "individual"
+```
+
+**Advantages:**
+- Preserves sample-specific viral variants
+- Better resolution of dominant strains
+- Captures sample-specific diversity
+- Faster per-sample processing (can parallelize)
+
+**When to use:**
+- Comparing viral populations across conditions/timepoints
+- Low sample counts (<10 samples)
+- Samples with very different viral communities
+- Need sample-specific variant information
+
+**Coassembly** (for shared viral populations)
+```yaml
+assembly_strategy: "coassembly"
+```
+
+**Advantages:**
+- Better assembly of shared/common viruses
+- Higher effective coverage for low-abundance viruses
+- Merges redundant sequences across samples
+- Better for low-depth samples
+
+**When to use:**
+- Technical replicates or similar samples
+- Longitudinal samples from same individual
+- Batch assembly of related samples
+- Reference catalog creation
+
+#### Example Configurations
+
+**Example 1: Full QC + Individual Assembly**
+```yaml
+# config/config.yaml
+pipeline:
+  run_assembly: true
+  assembly_strategy: "individual"
+
+samples:
+  sample1:
+    r1: "data/raw/sample1_R1.fastq.gz"
+    r2: "data/raw/sample1_R2.fastq.gz"
+```
+
+**Example 2: Coassembly from Pre-QC'd Reads**
+```yaml
+# config/config.yaml
+pipeline:
+  start_from: "cleaned_reads"
+  cleaned_reads_dir: "previous_run/clean_reads"
+  run_assembly: true
+  assembly_strategy: "coassembly"
+
+sample_auto_detection:
+  enabled: true
+  input_dir: "previous_run/clean_reads"
+  r1_pattern: "*_R1.fastq.gz"
+  r2_pattern: "*_R2.fastq.gz"
+```
+
 ---
 
 ## Usage
@@ -272,6 +396,8 @@ snakemake --dag | dot -Tpng > dag.png
 
 ## Output Structure
 
+### QC-Only Mode
+
 ```
 results/
 ├── fastqc/                    # FastQC reports (raw, trimmed, final)
@@ -295,6 +421,31 @@ results/
 ├── multiqc/
 │   └── multiqc_report.html    # Comprehensive QC dashboard
 └── logs/                      # All log files
+```
+
+### With Assembly Enabled
+
+```
+results/
+├── [All QC outputs above]
+├── bbmerge/                   # Merged and unmerged read pairs
+│   ├── {sample}_merged.fastq.gz        # Successfully merged reads
+│   ├── {sample}_R1_unmerged.fastq.gz   # R1 reads that couldn't merge
+│   ├── {sample}_R2_unmerged.fastq.gz   # R2 reads that couldn't merge
+│   └── {sample}_hist.txt               # Insert size histogram
+├── assembly/
+│   ├── final.contigs.fa       # Final assembled contigs (coassembly)
+│   │   OR
+│   ├── per_sample/            # Individual assemblies (if assembly_strategy: "individual")
+│   │   ├── {sample1}/
+│   │   │   ├── final.contigs.fa         # Sample-specific contigs
+│   │   │   └── intermediate_contigs/    # MEGAHIT k-mer intermediates
+│   │   ├── {sample2}/
+│   │   │   └── ...
+│   └── megahit/               # MEGAHIT working directory (coassembly only)
+└── reports/
+    ├── assembly_stats.tsv     # Assembly statistics (N50, total size, etc.)
+    └── [other QC reports]
 ```
 
 ---
@@ -381,6 +532,91 @@ Check `results/reports/read_counts.tsv`
 - Sample type and VLP enrichment efficiency
 
 Compare within-run samples to identify outliers with unusually high losses.
+
+### 7. Assembly Results (if enabled)
+
+#### BBMerge Statistics
+
+Check `results/bbmerge/{sample}_hist.txt` for insert size distributions:
+
+```
+#Mean    206.9
+#Median  213
+#Mode    261
+#STDev   52.5
+#PercentOfPairs  55.241
+```
+
+**Key metrics:**
+- **PercentOfPairs**: Merge rate (typical range: 45-75% for virome data)
+  - Higher merge rates = shorter inserts = more overlapping reads
+  - Lower merge rates = longer inserts = less overlap (both contribute to assembly)
+- **Mean/Median insert size**: Should be 150-250 bp for 2x151bp sequencing
+- **Mode**: Most common insert size in your library
+
+**Interpretation:**
+- Merge rates 50-70% are excellent for virome assembly
+- Consistent insert sizes across samples indicate good library prep
+- Wide standard deviation (>60 bp) may indicate heterogeneous fragmentation
+
+#### Assembly Statistics
+
+Check `results/reports/assembly_stats.tsv`:
+
+```
+sample      num_contigs  total_size_bp  mean_length_bp  longest_contig_bp  n50    l50  gc_percent
+sample1     214          771425         3604            58285              6133   28   41.43
+coassembly  1046         3132678        2994            93393              4598   121  43.50
+```
+
+**Key metrics:**
+
+**N50** (most important assembly quality metric)
+- Length-weighted median contig size
+- Higher N50 = better assembly contiguity
+- **Typical ranges for virome data:**
+  - Individual assemblies: 2-85 kb (varies by sample complexity)
+  - Coassembly: 3-10 kb (depends on shared viral content)
+
+**Number of contigs**
+- Individual: 30-500+ contigs (depends on viral diversity)
+- Coassembly: 500-2000+ contigs (captures pan-virome)
+- More contigs doesn't mean better/worse - reflects biological diversity
+
+**Longest contig**
+- Individual: 50-200 kb (often near-complete viral genomes)
+- Coassembly: 50-150 kb
+- Very long contigs (>100 kb) may represent:
+  - Complete phage genomes (typical: 30-200 kb)
+  - Large DNA viruses
+  - Rare bacterial contamination (if GC% is ~50-65%)
+
+**Total assembly size**
+- Individual: 300 kb - 2 Mb per sample
+- Coassembly: 2-10 Mb (depends on number of samples and diversity)
+- Size reflects captured viral diversity, not necessarily sample quality
+
+**GC content**
+- Viromes typically: 35-50% GC
+- High GC (>55%) may indicate bacterial contamination
+- Very low GC (<30%) may indicate AT-rich viruses (e.g., some ssDNA viruses)
+
+#### Comparing Assembly Strategies
+
+Use your test data to decide between strategies:
+
+**Individual assembly produced longer contigs (higher N50)?**
+- Samples have dominant strain variants
+- Use individual assembly for this dataset
+
+**Coassembly produced longer contigs?**
+- Samples share common viral populations
+- Coassembly provides better resolution
+- Consider coassembly for this dataset
+
+**Similar results?**
+- Either strategy is appropriate
+- Choose based on downstream analysis needs
 
 ---
 
