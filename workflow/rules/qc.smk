@@ -747,3 +747,30 @@ rule multiqc:
             --force \
             2>&1 | tee {log}
         """
+
+rule virome_report:
+    """
+    Generate user-friendly virome QC report (replaces MultiQC)
+
+    Creates both interactive HTML dashboard and structured JSON data
+    for virome-specific quality assessment with batch-level overview
+    and easy outlier identification.
+    """
+    input:
+        # QC data sources
+        read_counts=f"{OUTDIR}/reports/read_counts.tsv",
+        contamination_summary=f"{OUTDIR}/reports/contamination_summary.tsv",
+        qc_flags=f"{OUTDIR}/reports/sample_qc_flags.tsv",
+        primer_b_summary=f"{OUTDIR}/reports/primer_b_contamination_summary.tsv",
+        viromeqc_files=expand(f"{OUTDIR}/viromeqc/{{sample}}_viromeqc.txt", sample=SAMPLES),
+        # Optional: FastQC files for additional metrics
+        fastqc_files=expand(f"{OUTDIR}/fastqc/final/{{sample}}_R1_fastqc.zip", sample=SAMPLES)
+    output:
+        html_report=f"{OUTDIR}/reports/virome_report.html",
+        json_data=f"{OUTDIR}/reports/virome_report_data.json"
+    log:
+        f"{OUTDIR}/logs/virome_report.log"
+    conda:
+        "../envs/qc.yaml"
+    script:
+        "../scripts/generate_virome_report.py"

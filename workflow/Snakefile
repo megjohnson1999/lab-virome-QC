@@ -176,11 +176,27 @@ def get_final_outputs():
 
     return outputs
 
+def get_reporting_outputs():
+    """
+    Determine reporting outputs based on configuration
+    """
+    reporting_config = config.get("reporting", {})
+    outputs = []
+
+    # Primary virome report (default)
+    if reporting_config.get("generate_virome_report", True):
+        outputs.append(f"{OUTDIR}/reports/virome_report.html")
+
+    # MultiQC backup (optional)
+    if reporting_config.get("generate_multiqc_backup", False):
+        outputs.append(f"{OUTDIR}/multiqc/multiqc_report.html")
+
+    return outputs
 
 rule all:
     input:
-        # Final QC report
-        f"{OUTDIR}/multiqc/multiqc_report.html",
+        # Reporting outputs (conditional based on config)
+        get_reporting_outputs(),
         # ViromeQC results
         expand(f"{OUTDIR}/viromeqc/{{sample}}_viromeqc.txt", sample=SAMPLES),
         # Read count tracking

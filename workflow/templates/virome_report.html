@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Virome QC Report</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- DataTables CSS -->
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.bootstrap5.min.css">
+
+    <!-- Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
+
+    <style>
+        .status-pass { color: #28a745; font-weight: bold; }
+        .status-fail { color: #dc3545; font-weight: bold; }
+        .status-warning { color: #ffc107; font-weight: bold; }
+        .status-unknown { color: #6c757d; font-weight: bold; }
+
+        .outlier-highlight {
+            background-color: #fff3cd !important;
+            border-left: 4px solid #856404;
+        }
+
+        .metric-card {
+            border-left: 4px solid #007bff;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        }
+
+        .quality-excellent { border-left-color: #28a745; }
+        .quality-good { border-left-color: #20c997; }
+        .quality-warning { border-left-color: #ffc107; }
+        .quality-poor { border-left-color: #dc3545; }
+
+        .sample-card {
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+
+        .sample-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        .navbar-brand {
+            font-weight: bold;
+            font-size: 1.4rem;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .section-title {
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .filter-buttons {
+            margin-bottom: 1rem;
+        }
+
+        .plotly-container {
+            margin-bottom: 2rem;
+        }
+
+        .batch-alert {
+            border: none;
+            border-radius: 10px;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary sticky-top">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#executive-summary">
+                <i class="bi bi-virus"></i> Virome QC Report
+            </a>
+
+            <div class="navbar-nav">
+                <span class="navbar-text me-3">
+                    Generated: {{ timestamp }}
+                </span>
+                <span class="navbar-text">
+                    <strong>{{ batch_statistics.total_samples }}</strong> samples
+                </span>
+            </div>
+
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="#executive-summary">Summary</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#sample-overview">Samples</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#contamination-analysis">Contamination</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#read-processing">Processing</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+
+        <!-- Executive Summary -->
+        <section id="executive-summary" class="mb-5">
+            <h2 class="section-title">Executive Summary</h2>
+
+            <!-- Batch Alerts -->
+            {% if batch_statistics.pass_rate < 50 %}
+            <div class="alert batch-alert alert-danger" role="alert">
+                <h5><i class="bi bi-exclamation-triangle-fill"></i> Low Pass Rate Alert</h5>
+                <p>Only {{ "%.1f"|format(batch_statistics.pass_rate) }}% of samples passed QC. Review failed samples carefully.</p>
+            </div>
+            {% elif batch_statistics.outlier_count > 0 %}
+            <div class="alert batch-alert alert-warning" role="alert">
+                <h5><i class="bi bi-info-circle-fill"></i> Outliers Detected</h5>
+                <p>{{ batch_statistics.outlier_count }} samples flagged as statistical outliers. Check contamination patterns.</p>
+            </div>
+            {% else %}
+            <div class="alert batch-alert alert-success" role="alert">
+                <h5><i class="bi bi-check-circle-fill"></i> Batch Quality Good</h5>
+                <p>{{ "%.1f"|format(batch_statistics.pass_rate) }}% pass rate with {{ batch_statistics.outlier_count }} outliers detected.</p>
+            </div>
+            {% endif %}
+
+            <!-- Summary Statistics Grid -->
+            <div class="summary-grid">
+                <div class="card metric-card quality-{{ 'excellent' if batch_statistics.pass_rate >= 80 else 'good' if batch_statistics.pass_rate >= 60 else 'warning' if batch_statistics.pass_rate >= 40 else 'poor' }}">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-primary">{{ "%.1f"|format(batch_statistics.pass_rate) }}%</h3>
+                        <p class="card-text">Pass Rate</p>
+                        <small class="text-muted">{{ batch_statistics.pass_count }}/{{ batch_statistics.total_samples }}</small>
+                    </div>
+                </div>
+
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-warning">{{ batch_statistics.outlier_count }}</h3>
+                        <p class="card-text">Outliers</p>
+                        <small class="text-muted">Statistical outliers detected</small>
+                    </div>
+                </div>
+
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-info">
+                            {% if batch_statistics.clean_retention_median %}
+                                {{ "%.1f"|format(batch_statistics.clean_retention_median) }}%
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </h3>
+                        <p class="card-text">Median Read Retention</p>
+                        <small class="text-muted">After all QC steps</small>
+                    </div>
+                </div>
+
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-success">
+                            {% if batch_statistics.vector_percent_median is defined %}
+                                {{ "%.3f"|format(batch_statistics.vector_percent_median) }}%
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </h3>
+                        <p class="card-text">Median Contamination</p>
+                        <small class="text-muted">Vector contamination</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Top Outliers/Problem Samples -->
+            {% if top_outliers|length > 0 %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5><i class="bi bi-exclamation-diamond"></i> Samples Requiring Attention</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        {% for sample in top_outliers %}
+                        <div class="col-md-6 col-lg-4 mb-3">
+                            <div class="card sample-card outlier-highlight" onclick="showSampleDetails('{{ sample.sample }}')">
+                                <div class="card-body">
+                                    <h6 class="card-title">{{ sample.sample[:30] }}{% if sample.sample|length > 30 %}...{% endif %}</h6>
+                                    <p class="card-text">
+                                        <span class="status-{{ sample.overall_pass|lower }}">{{ sample.overall_pass }}</span><br>
+                                        <small>Score: {{ "%.1f"|format(sample.quality_score) if sample.quality_score else 'N/A' }}</small>
+                                    </p>
+                                    {% if sample.notes and sample.notes != 'None' %}
+                                    <small class="text-danger">{{ sample.notes }}</small>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </section>
+
+        <!-- Sample Quality Overview -->
+        <section id="sample-overview" class="mb-5">
+            <h2 class="section-title">Sample Quality Overview</h2>
+
+            <!-- Filter Buttons -->
+            <div class="filter-buttons">
+                <button class="btn btn-outline-primary" id="filter-all">All Samples</button>
+                <button class="btn btn-outline-success" id="filter-pass">Pass Only</button>
+                <button class="btn btn-outline-danger" id="filter-fail">Fail Only</button>
+                <button class="btn btn-outline-warning" id="filter-outliers">Outliers Only</button>
+            </div>
+
+            <!-- Sample Table -->
+            <div class="table-responsive">
+                <table id="sample-table" class="table table-striped table-hover" style="width:100%">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Sample</th>
+                            <th>Overall Status</th>
+                            <th>Quality Score</th>
+                            <th>Enrichment</th>
+                            <th>Read Retention %</th>
+                            <th>PhiX %</th>
+                            <th>Vector %</th>
+                            <th>Host Status</th>
+                            <th>rRNA Status</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sample in samples %}
+                        <tr class="{% if sample.any_outlier %}outlier-highlight{% endif %}" data-status="{{ sample.overall_pass|lower }}" data-outlier="{{ sample.any_outlier|lower }}">
+                            <td><strong>{{ sample.sample }}</strong></td>
+                            <td><span class="status-{{ sample.overall_pass|lower }}">{{ sample.overall_pass }}</span></td>
+                            <td>{{ "%.1f"|format(sample.quality_score) if sample.quality_score else 'N/A' }}</td>
+                            <td>{{ "%.1f"|format(sample.enrichment_score) if sample.enrichment_score else 'N/A' }}</td>
+                            <td>{{ "%.1f"|format(sample.clean_retention) if sample.clean_retention else 'N/A' }}</td>
+                            <td>{{ "%.3f"|format(sample.phix_percent) if sample.phix_percent is defined else 'N/A' }}</td>
+                            <td>{{ "%.3f"|format(sample.vector_percent) if sample.vector_percent is defined else 'N/A' }}</td>
+                            <td><span class="status-{{ sample.pass_host|lower }}">{{ sample.pass_host }}</span></td>
+                            <td><span class="status-{{ sample.pass_rrna|lower }}">{{ sample.pass_rrna }}</span></td>
+                            <td>{{ sample.notes if sample.notes != 'None' else '' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Contamination Analysis -->
+        <section id="contamination-analysis" class="mb-5">
+            <h2 class="section-title">Contamination Analysis</h2>
+
+            <!-- Contamination Plots Container -->
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Contamination Overview</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="contamination-scatter" class="plotly-container"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Contamination Distribution</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="contamination-histogram" class="plotly-container"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Read Processing Summary -->
+        <section id="read-processing" class="mb-5">
+            <h2 class="section-title">Read Processing Summary</h2>
+
+            <div class="row">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Read Count Progression</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="read-progression" class="plotly-container"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Sample Detail Modal -->
+    <div class="modal fade" id="sampleDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="sampleDetailModalLabel">Sample Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="sampleDetailContent">
+                    <!-- Dynamic content will be inserted here -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.bootstrap5.min.js"></script>
+
+    <!-- Custom JavaScript -->
+    <script>
+        // Report data from backend
+        const reportData = {{ report_data | tojson }};
+
+        $(document).ready(function() {
+            // Initialize DataTable
+            const table = $('#sample-table').DataTable({
+                pageLength: 25,
+                order: [[2, 'desc']], // Sort by quality score
+                dom: 'Bfrtip',
+                buttons: [
+                    'copy', 'csv', 'excel'
+                ]
+            });
+
+            // Filter buttons
+            $('#filter-all').click(function() {
+                table.search('').columns().search('').draw();
+                $('.btn-outline-primary').removeClass('active');
+                $(this).addClass('active');
+            });
+
+            $('#filter-pass').click(function() {
+                table.column(1).search('PASS').draw();
+                $('.btn-outline-primary, .btn-outline-success, .btn-outline-danger, .btn-outline-warning').removeClass('active');
+                $(this).addClass('active');
+            });
+
+            $('#filter-fail').click(function() {
+                table.column(1).search('FAIL').draw();
+                $('.btn-outline-primary, .btn-outline-success, .btn-outline-danger, .btn-outline-warning').removeClass('active');
+                $(this).addClass('active');
+            });
+
+            $('#filter-outliers').click(function() {
+                // Filter for rows with outlier-highlight class
+                $.fn.dataTable.ext.search.push(
+                    function(settings, data, dataIndex) {
+                        return $(table.row(dataIndex).node()).hasClass('outlier-highlight');
+                    }
+                );
+                table.draw();
+                $('.btn-outline-primary, .btn-outline-success, .btn-outline-danger, .btn-outline-warning').removeClass('active');
+                $(this).addClass('active');
+
+                // Remove custom filter after use
+                $.fn.dataTable.ext.search.pop();
+            });
+
+            // Generate plots
+            generateContaminationPlots();
+            generateReadProgressionPlot();
+        });
+
+        function generateContaminationPlots() {
+            // Contamination scatter plot
+            const scatterData = [{
+                x: reportData.samples.map(s => s.phix_percent || 0),
+                y: reportData.samples.map(s => s.vector_percent || 0),
+                text: reportData.samples.map(s => s.sample),
+                mode: 'markers',
+                type: 'scatter',
+                marker: {
+                    size: 8,
+                    color: reportData.samples.map(s => s.any_outlier ? 'red' : 'blue'),
+                    opacity: 0.7
+                }
+            }];
+
+            const scatterLayout = {
+                title: 'PhiX vs Vector Contamination',
+                xaxis: { title: 'PhiX Contamination (%)' },
+                yaxis: { title: 'Vector Contamination (%)' },
+                hovermode: 'closest',
+                showlegend: false
+            };
+
+            Plotly.newPlot('contamination-scatter', scatterData, scatterLayout);
+
+            // Contamination histogram
+            const histData = [{
+                x: reportData.samples.map(s => (s.phix_percent || 0) + (s.vector_percent || 0)),
+                type: 'histogram',
+                nbinsx: 10,
+                marker: { color: '#007bff' }
+            }];
+
+            const histLayout = {
+                title: 'Total Contamination Distribution',
+                xaxis: { title: 'Total Contamination (%)' },
+                yaxis: { title: 'Number of Samples' },
+                showlegend: false
+            };
+
+            Plotly.newPlot('contamination-histogram', histData, histLayout);
+        }
+
+        function generateReadProgressionPlot() {
+            // Read progression plot showing retention at each step
+            const steps = ['raw', 'fastp', 'host_depleted', 'rrna_removed', 'clean'];
+            const stepLabels = ['Raw', 'Trimmed', 'Host Depleted', 'rRNA Removed', 'Final'];
+
+            const traces = reportData.samples.map((sample, i) => {
+                const retentions = steps.map(step => {
+                    const retention_key = step + '_retention';
+                    return sample[retention_key] || (step === 'raw' ? 100 : null);
+                });
+
+                return {
+                    x: stepLabels,
+                    y: retentions,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: sample.sample.substring(0, 20) + (sample.sample.length > 20 ? '...' : ''),
+                    line: { width: sample.any_outlier ? 3 : 1 },
+                    marker: { size: sample.any_outlier ? 8 : 5 }
+                };
+            });
+
+            const layout = {
+                title: 'Read Retention Through QC Pipeline',
+                xaxis: { title: 'QC Step' },
+                yaxis: { title: 'Read Retention (%)' },
+                hovermode: 'closest',
+                legend: { orientation: 'h', y: -0.2 }
+            };
+
+            Plotly.newPlot('read-progression', traces, layout);
+        }
+
+        function showSampleDetails(sampleName) {
+            const sample = reportData.samples.find(s => s.sample === sampleName);
+            if (sample) {
+                const content = `
+                    <h6>${sample.sample}</h6>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <strong>QC Status:</strong> <span class="status-${sample.overall_pass.toLowerCase()}">${sample.overall_pass}</span><br>
+                            <strong>Quality Score:</strong> ${sample.quality_score ? sample.quality_score.toFixed(1) : 'N/A'}<br>
+                            <strong>Enrichment Score:</strong> ${sample.enrichment_score ? sample.enrichment_score.toFixed(1) : 'N/A'}<br>
+                        </div>
+                        <div class="col-md-6">
+                            <strong>Read Retention:</strong> ${sample.clean_retention ? sample.clean_retention.toFixed(1) + '%' : 'N/A'}<br>
+                            <strong>PhiX Contamination:</strong> ${sample.phix_percent !== undefined ? sample.phix_percent.toFixed(3) + '%' : 'N/A'}<br>
+                            <strong>Vector Contamination:</strong> ${sample.vector_percent !== undefined ? sample.vector_percent.toFixed(3) + '%' : 'N/A'}<br>
+                        </div>
+                    </div>
+                    ${sample.notes && sample.notes !== 'None' ? '<div class="mt-3"><strong>Issues:</strong> ' + sample.notes + '</div>' : ''}
+                `;
+
+                $('#sampleDetailModalLabel').text('Sample: ' + sampleName);
+                $('#sampleDetailContent').html(content);
+                $('#sampleDetailModal').modal('show');
+            }
+        }
+    </script>
+</body>
+</html>

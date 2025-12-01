@@ -13,3 +13,7 @@ dependencies:
   - matplotlib>=3.7
   - seaborn>=0.12
   - biopython>=1.81
+  # Dependencies for virome report generation
+  - jinja2>=3.0
+  - weasyprint>=58.0  # For future PDF generation
+  - markupsafe>=2.0   # Required by jinja2

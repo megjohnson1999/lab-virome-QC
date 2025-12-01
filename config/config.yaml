@@ -123,6 +123,31 @@ qc_thresholds:
   min_final_reads: 100000       # Minimum reads after all QC
   max_duplication_rate: 80      # Maximum % duplication
 
+# Virome report configuration
+reporting:
+  # Primary report type (replaces MultiQC)
+  generate_virome_report: true   # Enable user-friendly virome report
+  generate_multiqc_backup: false # Keep MultiQC as backup (for debugging)
+
+  # Report content options
+  include_fastqc_details: true   # Include FastQC metrics in report
+  outlier_detection_method: "iqr"  # Options: iqr, zscore, modified_zscore
+
+  # Quality scoring weights for sample ranking
+  quality_weights:
+    enrichment_score: 0.30       # ViromeQC enrichment weight
+    read_retention: 0.25         # Final read retention weight
+    phix_contamination: 0.20     # PhiX contamination weight (negative)
+    vector_contamination: 0.15   # Vector contamination weight (negative)
+    total_contamination: 0.10    # Total contamination weight (negative)
+
+  # Visualization settings
+  max_samples_in_plots: 100      # Limit for performance with large batches
+  color_scheme: "colorblind_friendly"  # Options: default, colorblind_friendly
+
+  # Export options
+  export_formats: ["html", "json"]  # Options: html, json, pdf (pdf coming soon)
+
 # Computational resources
 # Adjust based on your system
 resources:
