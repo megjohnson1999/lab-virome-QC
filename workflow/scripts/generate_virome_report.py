@@ -81,15 +81,29 @@ class ViromeQCDataLoader:
             sample = Path(vqc_file).stem.replace('_viromeqc', '')
 
             enrichment_score = None
-            with open(vqc_file) as f:
-                for line in f:
-                    if "Enrichment score" in line or "enrichment" in line.lower():
-                        parts = line.strip().split()
-                        try:
-                            enrichment_score = float(parts[-1])
-                            break
-                        except (ValueError, IndexError):
-                            pass
+            try:
+                # Parse as TSV file
+                df = pd.read_csv(vqc_file, sep='\t')
+
+                # Look for enrichment score column (handles typo "enrichmnet")
+                enrichment_cols = [col for col in df.columns
+                                 if 'enrichment' in col.lower() or 'enrichmnet' in col.lower()]
+
+                if enrichment_cols and len(df) > 0:
+                    enrichment_score = float(df[enrichment_cols[0]].iloc[0])
+
+            except Exception as e:
+                print(f"Warning: Failed to parse ViromeQC file {vqc_file}: {e}")
+                # Fallback to old method for backward compatibility
+                try:
+                    with open(vqc_file) as f:
+                        for line in f:
+                            if "enrichment" in line.lower():
+                                parts = line.strip().split()
+                                enrichment_score = float(parts[-1])
+                                break
+                except:
+                    pass
 
             viromeqc_data.append({
                 'sample': sample,
@@ -234,6 +248,31 @@ class ViromeQCReportGenerator:
 
         # Reset index to have sample as column
         unified = unified.reset_index()
+
+        # Fix ViromeQC data priority: use correctly parsed scores over QC flags
+        if not viromeqc.empty and 'enrichment_score_vqc' in unified.columns:
+            # Replace QC flags enrichment scores with correctly parsed ones
+            unified['enrichment_score'] = unified['enrichment_score_vqc'].fillna(unified['enrichment_score'])
+
+            # Recalculate enrichment pass/fail based on corrected scores
+            if 'min_enrichment_score' in self.config.get('qc_thresholds', {}):
+                min_enrichment = self.config['qc_thresholds']['min_enrichment_score']
+
+                # Update pass_enrichment based on corrected scores
+                unified.loc[unified['enrichment_score'].notna(), 'pass_enrichment'] = \
+                    unified.loc[unified['enrichment_score'].notna(), 'enrichment_score'].apply(
+                        lambda x: 'PASS' if x >= min_enrichment else 'FAIL'
+                    )
+
+                # Recalculate overall pass status
+                for idx, row in unified.iterrows():
+                    checks = [row['pass_enrichment'], row['pass_host'], row['pass_rrna'], row['pass_final_count']]
+                    if 'FAIL' in checks:
+                        unified.at[idx, 'overall_pass'] = 'FAIL'
+                    elif 'UNKNOWN' in checks:
+                        unified.at[idx, 'overall_pass'] = 'WARNING'
+                    else:
+                        unified.at[idx, 'overall_pass'] = 'PASS'
 
         self.unified_data = unified
         print(f"Successfully loaded data for {len(unified)} samples")
