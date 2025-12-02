@@ -178,41 +178,60 @@ def get_final_outputs():
 
 def get_reporting_outputs():
     """
-    Determine reporting outputs based on configuration
+    Determine reporting outputs based on configuration and pipeline mode
     """
     reporting_config = config.get("reporting", {})
     outputs = []
 
-    # Primary virome report (default)
-    if reporting_config.get("generate_virome_report", True):
-        outputs.append(f"{OUTDIR}/reports/virome_report.html")
+    # Only generate reports when QC is being performed (starting from raw reads)
+    if START_FROM == "raw_reads":
+        # Primary virome report (default)
+        if reporting_config.get("generate_virome_report", True):
+            outputs.append(f"{OUTDIR}/reports/virome_report.html")
 
-    # MultiQC backup (optional)
-    if reporting_config.get("generate_multiqc_backup", False):
-        outputs.append(f"{OUTDIR}/multiqc/multiqc_report.html")
+        # MultiQC backup (optional)
+        if reporting_config.get("generate_multiqc_backup", False):
+            outputs.append(f"{OUTDIR}/multiqc/multiqc_report.html")
+
+    return outputs
+
+def get_qc_outputs():
+    """
+    Get QC-specific outputs only when starting from raw reads
+    """
+    outputs = []
+
+    # Only include QC outputs when performing QC (starting from raw reads)
+    if START_FROM == "raw_reads":
+        outputs.extend([
+            # ViromeQC results
+            expand(f"{OUTDIR}/viromeqc/{{sample}}_viromeqc.txt", sample=SAMPLES),
+            # Read count tracking
+            f"{OUTDIR}/reports/read_counts.tsv",
+            # Sample QC flags
+            f"{OUTDIR}/reports/sample_qc_flags.tsv",
+            # Contamination flagging summary
+            f"{OUTDIR}/reports/contamination_summary.tsv",
+            # Contamination plots
+            f"{OUTDIR}/reports/contamination_bars.png",
+            f"{OUTDIR}/reports/contamination_boxes.png",
+            f"{OUTDIR}/reports/contamination_scatter.png",
+            f"{OUTDIR}/reports/contamination_heatmap.png",
+            # Primer B cross-contamination analysis
+            f"{OUTDIR}/reports/primer_b_contamination_summary.tsv",
+            f"{OUTDIR}/reports/primer_b_heatmap.png"
+        ])
 
     return outputs
 
 rule all:
     input:
-        # Reporting outputs (conditional based on config)
+        # Final pipeline outputs (conditional based on pipeline mode)
+        get_final_outputs(),
+        # Reporting outputs (conditional based on config and pipeline mode)
         get_reporting_outputs(),
-        # ViromeQC results
-        expand(f"{OUTDIR}/viromeqc/{{sample}}_viromeqc.txt", sample=SAMPLES),
-        # Read count tracking
-        f"{OUTDIR}/reports/read_counts.tsv",
-        # Sample QC flags
-        f"{OUTDIR}/reports/sample_qc_flags.tsv",
-        # Contamination flagging summary
-        f"{OUTDIR}/reports/contamination_summary.tsv",
-        # Contamination plots
-        f"{OUTDIR}/reports/contamination_bars.png",
-        f"{OUTDIR}/reports/contamination_boxes.png",
-        f"{OUTDIR}/reports/contamination_scatter.png",
-        f"{OUTDIR}/reports/contamination_heatmap.png",
-        # Primer B cross-contamination analysis
-        f"{OUTDIR}/reports/primer_b_contamination_summary.tsv",
-        f"{OUTDIR}/reports/primer_b_heatmap.png"
+        # QC-specific outputs (conditional based on pipeline mode)
+        get_qc_outputs()
 
 # ================================================================================
 # Pipeline Summary
