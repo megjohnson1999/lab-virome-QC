@@ -143,6 +143,14 @@
             </div>
             {% endif %}
 
+            <!-- Low Coverage Alert -->
+            {% if batch_statistics.low_coverage_count and batch_statistics.low_coverage_count > 0 %}
+            <div class="alert batch-alert alert-warning" role="alert">
+                <h5><i class="bi bi-graph-down-arrow"></i> Low Coverage Samples Detected</h5>
+                <p>{{ batch_statistics.low_coverage_count }} samples have fewer than 1M final reads. These samples may have insufficient coverage for reliable virome analysis and could benefit from re-sequencing or pooling with additional samples.</p>
+            </div>
+            {% endif %}
+
             <!-- Summary Statistics Grid -->
             <div class="summary-grid">
                 <div class="card metric-card">
@@ -186,6 +194,48 @@
                         </h3>
                         <p class="card-text">Median Contamination</p>
                         <small class="text-muted">Vector contamination</small>
+                    </div>
+                </div>
+
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-primary">
+                            {% if batch_statistics.total_reads_millions %}
+                                {{ batch_statistics.total_reads_millions }}M
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </h3>
+                        <p class="card-text">Total Reads Processed</p>
+                        <small class="text-muted">Across all samples</small>
+                    </div>
+                </div>
+
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-info">
+                            {% if batch_statistics.total_final_reads_millions %}
+                                {{ batch_statistics.total_final_reads_millions }}M
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </h3>
+                        <p class="card-text">Final Reads Retained</p>
+                        <small class="text-muted">After all QC steps</small>
+                    </div>
+                </div>
+
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-secondary">
+                            {% if batch_statistics.median_raw_reads_millions %}
+                                {{ batch_statistics.median_raw_reads_millions }}M
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </h3>
+                        <p class="card-text">Median Sample Size</p>
+                        <small class="text-muted">Raw reads per sample</small>
                     </div>
                 </div>
             </div>
@@ -255,8 +305,10 @@
                         <tr>
                             <th>Sample</th>
                             <th>Quality Score</th>
-                            <th>Enrichment</th>
+                            <th>Total Reads</th>
+                            <th>Final Reads</th>
                             <th>Read Retention %</th>
+                            <th>Enrichment</th>
                             <th>PhiX %</th>
                             <th>Vector %</th>
                             <th>Host %</th>
@@ -266,11 +318,31 @@
                     </thead>
                     <tbody>
                         {% for sample in samples %}
-                        <tr class="{% if sample.any_outlier %}outlier-highlight{% endif %}" data-outlier="{{ sample.any_outlier|lower }}">
+                        <tr class="{% if sample.any_outlier %}outlier-highlight{% endif %} {% if sample.clean and sample.clean < 1000000 %}table-warning{% endif %}" data-outlier="{{ sample.any_outlier|lower }}">
                             <td><strong>{{ sample.sample }}</strong></td>
                             <td>{{ "%.1f"|format(sample.quality_score) if sample.quality_score else 'N/A' }}</td>
-                            <td>{{ "%.1f"|format(sample.enrichment_score) if sample.enrichment_score else 'N/A' }}</td>
+                            <td>
+                                {% if sample.raw %}
+                                    {{ "{:,.0f}"|format(sample.raw) }}
+                                    {% if sample.raw < 1000000 %}
+                                        <small class="text-danger">(Low)</small>
+                                    {% endif %}
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if sample.clean %}
+                                    {{ "{:,.0f}"|format(sample.clean) }}
+                                    {% if sample.clean < 1000000 %}
+                                        <small class="text-warning">(< 1M)</small>
+                                    {% endif %}
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </td>
                             <td>{{ "%.1f"|format(sample.clean_retention) if sample.clean_retention else 'N/A' }}</td>
+                            <td>{{ "%.1f"|format(sample.enrichment_score) if sample.enrichment_score else 'N/A' }}</td>
                             <td>{{ "%.3f"|format(sample.phix_percent) if sample.phix_percent is defined else 'N/A' }}</td>
                             <td>{{ "%.3f"|format(sample.vector_percent) if sample.vector_percent is defined else 'N/A' }}</td>
                             <td>{{ "%.1f"|format(sample.host_percent) if sample.host_percent is defined and sample.host_percent != 'NA' else 'N/A' }}</td>
@@ -384,6 +456,9 @@
                 dom: 'Bfrtip',
                 buttons: [
                     'copy', 'csv', 'excel'
+                ],
+                columnDefs: [
+                    { className: "text-end", targets: [1, 2, 3, 4, 5, 6, 7, 8, 9] } // Right-align numeric columns
                 ]
             });
 
@@ -469,22 +544,31 @@
         function showSampleDetails(sampleName) {
             const sample = reportData.samples.find(s => s.sample === sampleName);
             if (sample) {
+                const formatNumber = (num) => num ? num.toLocaleString() : 'N/A';
+
                 const content = `
                     <h6>${sample.sample}</h6>
                     <div class="row">
                         <div class="col-md-6">
+                            <h6 class="text-primary">Quality Metrics</h6>
                             <strong>Quality Score:</strong> ${sample.quality_score ? sample.quality_score.toFixed(1) : 'N/A'}<br>
                             <strong>Enrichment Score:</strong> ${sample.enrichment_score ? sample.enrichment_score.toFixed(1) : 'N/A'}<br>
                             <strong>Read Retention:</strong> ${sample.clean_retention ? sample.clean_retention.toFixed(1) + '%' : 'N/A'}<br>
+                            <br>
+                            <h6 class="text-success">Read Counts</h6>
+                            <strong>Raw Reads:</strong> ${formatNumber(sample.raw)}<br>
+                            <strong>Final Reads:</strong> ${formatNumber(sample.clean)} ${sample.clean && sample.clean < 1000000 ? '<small class="text-warning">(Low coverage)</small>' : ''}<br>
+                            <strong>Reads Retained:</strong> ${sample.raw && sample.clean ? formatNumber(sample.raw - sample.clean) + ' lost' : 'N/A'}<br>
                         </div>
                         <div class="col-md-6">
-                            <strong>PhiX Contamination:</strong> ${sample.phix_percent !== undefined ? sample.phix_percent.toFixed(3) + '%' : 'N/A'}<br>
-                            <strong>Vector Contamination:</strong> ${sample.vector_percent !== undefined ? sample.vector_percent.toFixed(3) + '%' : 'N/A'}<br>
-                            <strong>Host Contamination:</strong> ${sample.host_percent !== undefined && sample.host_percent !== 'NA' ? sample.host_percent.toFixed(1) + '%' : 'N/A'}<br>
-                            <strong>rRNA Contamination:</strong> ${sample.rrna_percent !== undefined && sample.rrna_percent !== 'NA' ? sample.rrna_percent.toFixed(1) + '%' : 'N/A'}<br>
+                            <h6 class="text-warning">Contamination Levels</h6>
+                            <strong>PhiX:</strong> ${sample.phix_percent !== undefined ? sample.phix_percent.toFixed(3) + '%' : 'N/A'}<br>
+                            <strong>Vector:</strong> ${sample.vector_percent !== undefined ? sample.vector_percent.toFixed(3) + '%' : 'N/A'}<br>
+                            <strong>Host:</strong> ${sample.host_percent !== undefined && sample.host_percent !== 'NA' ? sample.host_percent.toFixed(1) + '%' : 'N/A'}<br>
+                            <strong>rRNA:</strong> ${sample.rrna_percent !== undefined && sample.rrna_percent !== 'NA' ? sample.rrna_percent.toFixed(1) + '%' : 'N/A'}<br>
                         </div>
                     </div>
-                    ${sample.notes && sample.notes !== 'None' ? '<div class="mt-3"><strong>Issues:</strong> ' + sample.notes + '</div>' : ''}
+                    ${sample.notes && sample.notes !== 'None' ? '<div class="mt-3 alert alert-warning"><strong>Notes:</strong> ' + sample.notes + '</div>' : ''}
                 `;
 
                 $('#sampleDetailModalLabel').text('Sample: ' + sampleName);

@@ -360,6 +360,22 @@ class ViromeQCReportGenerator:
             'outlier_count': len(self.unified_data[self.unified_data['any_outlier'] == True]),
         }
 
+        # Calculate read count statistics
+        if 'raw' in self.unified_data.columns:
+            stats['total_reads'] = self.unified_data['raw'].sum()
+            stats['total_reads_millions'] = round(self.unified_data['raw'].sum() / 1000000, 1)
+            stats['median_raw_reads'] = self.unified_data['raw'].median()
+            stats['median_raw_reads_millions'] = round(self.unified_data['raw'].median() / 1000000, 1)
+
+        if 'clean' in self.unified_data.columns:
+            stats['total_final_reads'] = self.unified_data['clean'].sum()
+            stats['total_final_reads_millions'] = round(self.unified_data['clean'].sum() / 1000000, 1)
+            stats['median_final_reads'] = self.unified_data['clean'].median()
+            stats['median_final_reads_millions'] = round(self.unified_data['clean'].median() / 1000000, 1)
+
+            # Calculate low coverage samples (< 1M final reads)
+            stats['low_coverage_count'] = len(self.unified_data[self.unified_data['clean'] < 1000000])
+
         # Calculate median values for key metrics
         numeric_cols = ['enrichment_score', 'clean_retention', 'phix_percent',
                        'vector_percent', 'quality_score']
