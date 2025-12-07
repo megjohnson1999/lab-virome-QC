@@ -126,30 +126,30 @@
             <h2 class="section-title">Executive Summary</h2>
 
             <!-- Batch Alerts -->
-            {% if batch_statistics.pass_rate < 50 %}
-            <div class="alert batch-alert alert-danger" role="alert">
-                <h5><i class="bi bi-exclamation-triangle-fill"></i> Low Pass Rate Alert</h5>
-                <p>Only {{ "%.1f"|format(batch_statistics.pass_rate) }}% of samples passed QC. Review failed samples carefully.</p>
+            {% if batch_statistics.outlier_count > batch_statistics.total_samples * 0.2 %}
+            <div class="alert batch-alert alert-warning" role="alert">
+                <h5><i class="bi bi-exclamation-triangle-fill"></i> Many Outliers Detected</h5>
+                <p>{{ batch_statistics.outlier_count }} samples flagged as statistical outliers. Review contamination patterns and quality metrics.</p>
             </div>
             {% elif batch_statistics.outlier_count > 0 %}
-            <div class="alert batch-alert alert-warning" role="alert">
+            <div class="alert batch-alert alert-info" role="alert">
                 <h5><i class="bi bi-info-circle-fill"></i> Outliers Detected</h5>
-                <p>{{ batch_statistics.outlier_count }} samples flagged as statistical outliers. Check contamination patterns.</p>
+                <p>{{ batch_statistics.outlier_count }} samples flagged as statistical outliers. Check individual sample metrics.</p>
             </div>
             {% else %}
             <div class="alert batch-alert alert-success" role="alert">
-                <h5><i class="bi bi-check-circle-fill"></i> Batch Quality Good</h5>
-                <p>{{ "%.1f"|format(batch_statistics.pass_rate) }}% pass rate with {{ batch_statistics.outlier_count }} outliers detected.</p>
+                <h5><i class="bi bi-check-circle-fill"></i> Batch Processing Complete</h5>
+                <p>{{ batch_statistics.total_samples }} samples processed with no statistical outliers detected.</p>
             </div>
             {% endif %}
 
             <!-- Summary Statistics Grid -->
             <div class="summary-grid">
-                <div class="card metric-card quality-{{ 'excellent' if batch_statistics.pass_rate >= 80 else 'good' if batch_statistics.pass_rate >= 60 else 'warning' if batch_statistics.pass_rate >= 40 else 'poor' }}">
+                <div class="card metric-card">
                     <div class="card-body text-center">
-                        <h3 class="card-title text-primary">{{ "%.1f"|format(batch_statistics.pass_rate) }}%</h3>
-                        <p class="card-text">Pass Rate</p>
-                        <small class="text-muted">{{ batch_statistics.pass_count }}/{{ batch_statistics.total_samples }}</small>
+                        <h3 class="card-title text-primary">{{ batch_statistics.total_samples }}</h3>
+                        <p class="card-text">Total Samples</p>
+                        <small class="text-muted">Processed successfully</small>
                     </div>
                 </div>
 
@@ -204,8 +204,8 @@
                                 <div class="card-body">
                                     <h6 class="card-title">{{ sample.sample[:30] }}{% if sample.sample|length > 30 %}...{% endif %}</h6>
                                     <p class="card-text">
-                                        <span class="status-{{ sample.overall_pass|lower }}">{{ sample.overall_pass }}</span><br>
-                                        <small>Score: {{ "%.1f"|format(sample.quality_score) if sample.quality_score else 'N/A' }}</small>
+                                        <strong>Quality Score: {{ "%.1f"|format(sample.quality_score) if sample.quality_score else 'N/A' }}</strong><br>
+                                        <small>Enrichment: {{ "%.1f"|format(sample.enrichment_score) if sample.enrichment_score else 'N/A' }}</small>
                                     </p>
                                     {% if sample.notes and sample.notes != 'None' %}
                                     <small class="text-danger">{{ sample.notes }}</small>
@@ -245,8 +245,6 @@
             <!-- Filter Buttons -->
             <div class="filter-buttons">
                 <button class="btn btn-outline-primary" id="filter-all">All Samples</button>
-                <button class="btn btn-outline-success" id="filter-pass">Pass Only</button>
-                <button class="btn btn-outline-danger" id="filter-fail">Fail Only</button>
                 <button class="btn btn-outline-warning" id="filter-outliers">Outliers Only</button>
             </div>
 
@@ -256,7 +254,6 @@
                     <thead class="table-dark">
                         <tr>
                             <th>Sample</th>
-                            <th>Overall Status</th>
                             <th>Quality Score</th>
                             <th>Enrichment</th>
                             <th>Read Retention %</th>
@@ -269,9 +266,8 @@
                     </thead>
                     <tbody>
                         {% for sample in samples %}
-                        <tr class="{% if sample.any_outlier %}outlier-highlight{% endif %}" data-status="{{ sample.overall_pass|lower }}" data-outlier="{{ sample.any_outlier|lower }}">
+                        <tr class="{% if sample.any_outlier %}outlier-highlight{% endif %}" data-outlier="{{ sample.any_outlier|lower }}">
                             <td><strong>{{ sample.sample }}</strong></td>
-                            <td><span class="status-{{ sample.overall_pass|lower }}">{{ sample.overall_pass }}</span></td>
                             <td>{{ "%.1f"|format(sample.quality_score) if sample.quality_score else 'N/A' }}</td>
                             <td>{{ "%.1f"|format(sample.enrichment_score) if sample.enrichment_score else 'N/A' }}</td>
                             <td>{{ "%.1f"|format(sample.clean_retention) if sample.clean_retention else 'N/A' }}</td>
@@ -292,8 +288,8 @@
             <h2 class="section-title">Contamination Analysis</h2>
 
             <!-- Contamination Distribution -->
-            <div class="row">
-                <div class="col-md-6">
+            <div class="row mb-3">
+                <div class="col-12">
                     <div class="card">
                         <div class="card-header">
                             <h5>PhiX/UniVec Contamination Distribution</h5>
@@ -303,7 +299,11 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-6">
+            </div>
+
+            <!-- Contamination Bar Chart -->
+            <div class="row mb-3">
+                <div class="col-12">
                     <div class="card">
                         <div class="card-header">
                             <h5>Contamination Levels by Sample</h5>
@@ -315,9 +315,9 @@
                 </div>
             </div>
 
-            <!-- Additional Contamination Visualizations -->
-            <div class="row mt-3">
-                <div class="col-md-6">
+            <!-- Contamination Heatmap -->
+            <div class="row mb-3">
+                <div class="col-12">
                     <div class="card">
                         <div class="card-header">
                             <h5>Contamination Heatmap</h5>
@@ -327,7 +327,11 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-6">
+            </div>
+
+            <!-- Primer B Cross-Contamination -->
+            <div class="row mb-3">
+                <div class="col-12">
                     <div class="card">
                         <div class="card-header">
                             <h5>Primer B Cross-Contamination</h5>
@@ -376,7 +380,7 @@
             // Initialize DataTable
             const table = $('#sample-table').DataTable({
                 pageLength: 25,
-                order: [[2, 'desc']], // Sort by quality score
+                order: [[1, 'desc']], // Sort by quality score
                 dom: 'Bfrtip',
                 buttons: [
                     'copy', 'csv', 'excel'
@@ -386,19 +390,7 @@
             // Filter buttons
             $('#filter-all').click(function() {
                 table.search('').columns().search('').draw();
-                $('.btn-outline-primary').removeClass('active');
-                $(this).addClass('active');
-            });
-
-            $('#filter-pass').click(function() {
-                table.column(1).search('PASS').draw();
-                $('.btn-outline-primary, .btn-outline-success, .btn-outline-danger, .btn-outline-warning').removeClass('active');
-                $(this).addClass('active');
-            });
-
-            $('#filter-fail').click(function() {
-                table.column(1).search('FAIL').draw();
-                $('.btn-outline-primary, .btn-outline-success, .btn-outline-danger, .btn-outline-warning').removeClass('active');
+                $('.btn-outline-primary, .btn-outline-warning').removeClass('active');
                 $(this).addClass('active');
             });
 
@@ -410,7 +402,7 @@
                     }
                 );
                 table.draw();
-                $('.btn-outline-primary, .btn-outline-success, .btn-outline-danger, .btn-outline-warning').removeClass('active');
+                $('.btn-outline-primary, .btn-outline-warning').removeClass('active');
                 $(this).addClass('active');
 
                 // Remove custom filter after use
@@ -481,12 +473,11 @@
                     <h6>${sample.sample}</h6>
                     <div class="row">
                         <div class="col-md-6">
-                            <strong>QC Status:</strong> <span class="status-${sample.overall_pass.toLowerCase()}">${sample.overall_pass}</span><br>
                             <strong>Quality Score:</strong> ${sample.quality_score ? sample.quality_score.toFixed(1) : 'N/A'}<br>
                             <strong>Enrichment Score:</strong> ${sample.enrichment_score ? sample.enrichment_score.toFixed(1) : 'N/A'}<br>
+                            <strong>Read Retention:</strong> ${sample.clean_retention ? sample.clean_retention.toFixed(1) + '%' : 'N/A'}<br>
                         </div>
                         <div class="col-md-6">
-                            <strong>Read Retention:</strong> ${sample.clean_retention ? sample.clean_retention.toFixed(1) + '%' : 'N/A'}<br>
                             <strong>PhiX Contamination:</strong> ${sample.phix_percent !== undefined ? sample.phix_percent.toFixed(3) + '%' : 'N/A'}<br>
                             <strong>Vector Contamination:</strong> ${sample.vector_percent !== undefined ? sample.vector_percent.toFixed(3) + '%' : 'N/A'}<br>
                             <strong>Host Contamination:</strong> ${sample.host_percent !== undefined && sample.host_percent !== 'NA' ? sample.host_percent.toFixed(1) + '%' : 'N/A'}<br>

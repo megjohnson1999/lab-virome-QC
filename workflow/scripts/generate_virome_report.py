@@ -357,13 +357,8 @@ class ViromeQCReportGenerator:
         """Calculate batch-level summary statistics"""
         stats = {
             'total_samples': len(self.unified_data),
-            'pass_count': len(self.unified_data[self.unified_data['overall_pass'] == 'PASS']),
-            'fail_count': len(self.unified_data[self.unified_data['overall_pass'] == 'FAIL']),
-            'warning_count': len(self.unified_data[self.unified_data['overall_pass'] == 'WARNING']),
             'outlier_count': len(self.unified_data[self.unified_data['any_outlier'] == True]),
         }
-
-        stats['pass_rate'] = stats['pass_count'] / stats['total_samples'] * 100
 
         # Calculate median values for key metrics
         numeric_cols = ['enrichment_score', 'clean_retention', 'phix_percent',
@@ -482,7 +477,6 @@ class ViromeQCReportGenerator:
         stats = report_data['batch_statistics']
         print(f"\nBATCH SUMMARY:")
         print(f"  Total samples: {stats['total_samples']}")
-        print(f"  Pass rate: {stats['pass_rate']:.1f}%")
         print(f"  Outliers detected: {stats['outlier_count']}")
         print(f"  Quality score median: {stats.get('quality_score_median', 'N/A'):.1f}")
 
