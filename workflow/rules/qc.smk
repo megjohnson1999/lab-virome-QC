@@ -763,6 +763,12 @@ rule virome_report:
         qc_flags=f"{OUTDIR}/reports/sample_qc_flags.tsv",
         primer_b_summary=f"{OUTDIR}/reports/primer_b_contamination_summary.tsv",
         viromeqc_files=expand(f"{OUTDIR}/viromeqc/{{sample}}_viromeqc.txt", sample=SAMPLES),
+        # Plot files for report
+        contamination_plots=[
+            f"{OUTDIR}/reports/contamination_bars.png",
+            f"{OUTDIR}/reports/contamination_heatmap.png"
+        ],
+        primer_b_plot=f"{OUTDIR}/reports/primer_b_heatmap.png",
         # Optional: FastQC files for additional metrics
         fastqc_files=expand(f"{OUTDIR}/fastqc/final/{{sample}}_R1_fastqc.zip", sample=SAMPLES)
     output:

@@ -55,7 +55,9 @@ def main():
             'sample': sample,
             'enrichment_score': 'NA',
             'pass_enrichment': 'UNKNOWN',
+            'host_percent': 'NA',
             'pass_host': 'UNKNOWN',
+            'rrna_percent': 'NA',
             'pass_rrna': 'UNKNOWN',
             'pass_final_count': 'UNKNOWN',
             'overall_pass': 'UNKNOWN',
@@ -87,6 +89,7 @@ def main():
             # the true host contamination % without including QC filtering losses
             host_removed = fastp_count - host_depleted
             host_pct = (host_removed / fastp_count) * 100 if fastp_count > 0 else 0
+            flags['host_percent'] = host_pct
 
             if host_pct <= max_host_pct:
                 flags['pass_host'] = 'PASS'
@@ -97,6 +100,7 @@ def main():
             # Calculate % rRNA removed
             rrna_removed = host_depleted - clean_count
             rrna_pct = (rrna_removed / host_depleted) * 100 if host_depleted > 0 else 0
+            flags['rrna_percent'] = rrna_pct
 
             if rrna_pct <= max_rrna_pct:
                 flags['pass_rrna'] = 'PASS'

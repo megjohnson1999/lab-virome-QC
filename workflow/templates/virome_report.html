@@ -106,13 +106,13 @@
                         <a class="nav-link" href="#executive-summary">Summary</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="#read-processing">Processing</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="#sample-overview">Samples</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="#contamination-analysis">Contamination</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#read-processing">Processing</a>
                     </li>
                 </ul>
             </div>
@@ -220,6 +220,24 @@
             {% endif %}
         </section>
 
+        <!-- Read Processing Summary -->
+        <section id="read-processing" class="mb-5">
+            <h2 class="section-title">Read Processing Summary</h2>
+
+            <div class="row">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Read Count Progression</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="read-progression" class="plotly-container"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- Sample Quality Overview -->
         <section id="sample-overview" class="mb-5">
             <h2 class="section-title">Sample Quality Overview</h2>
@@ -244,8 +262,8 @@
                             <th>Read Retention %</th>
                             <th>PhiX %</th>
                             <th>Vector %</th>
-                            <th>Host Status</th>
-                            <th>rRNA Status</th>
+                            <th>Host %</th>
+                            <th>rRNA %</th>
                             <th>Notes</th>
                         </tr>
                     </thead>
@@ -259,8 +277,8 @@
                             <td>{{ "%.1f"|format(sample.clean_retention) if sample.clean_retention else 'N/A' }}</td>
                             <td>{{ "%.3f"|format(sample.phix_percent) if sample.phix_percent is defined else 'N/A' }}</td>
                             <td>{{ "%.3f"|format(sample.vector_percent) if sample.vector_percent is defined else 'N/A' }}</td>
-                            <td><span class="status-{{ sample.pass_host|lower }}">{{ sample.pass_host }}</span></td>
-                            <td><span class="status-{{ sample.pass_rrna|lower }}">{{ sample.pass_rrna }}</span></td>
+                            <td>{{ "%.1f"|format(sample.host_percent) if sample.host_percent is defined and sample.host_percent != 'NA' else 'N/A' }}</td>
+                            <td>{{ "%.1f"|format(sample.rrna_percent) if sample.rrna_percent is defined and sample.rrna_percent != 'NA' else 'N/A' }}</td>
                             <td>{{ sample.notes if sample.notes != 'None' else '' }}</td>
                         </tr>
                         {% endfor %}
@@ -273,43 +291,49 @@
         <section id="contamination-analysis" class="mb-5">
             <h2 class="section-title">Contamination Analysis</h2>
 
-            <!-- Contamination Plots Container -->
+            <!-- Contamination Distribution -->
             <div class="row">
                 <div class="col-md-6">
                     <div class="card">
                         <div class="card-header">
-                            <h5>Contamination Overview</h5>
-                        </div>
-                        <div class="card-body">
-                            <div id="contamination-scatter" class="plotly-container"></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-6">
-                    <div class="card">
-                        <div class="card-header">
-                            <h5>Contamination Distribution</h5>
+                            <h5>PhiX/UniVec Contamination Distribution</h5>
                         </div>
                         <div class="card-body">
                             <div id="contamination-histogram" class="plotly-container"></div>
                         </div>
                     </div>
                 </div>
-            </div>
-        </section>
-
-        <!-- Read Processing Summary -->
-        <section id="read-processing" class="mb-5">
-            <h2 class="section-title">Read Processing Summary</h2>
-
-            <div class="row">
-                <div class="col-12">
+                <div class="col-md-6">
                     <div class="card">
                         <div class="card-header">
-                            <h5>Read Count Progression</h5>
+                            <h5>Contamination Levels by Sample</h5>
                         </div>
                         <div class="card-body">
-                            <div id="read-progression" class="plotly-container"></div>
+                            <img src="contamination_bars.png" alt="Contamination Bar Chart" class="img-fluid">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Additional Contamination Visualizations -->
+            <div class="row mt-3">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Contamination Heatmap</h5>
+                        </div>
+                        <div class="card-body">
+                            <img src="contamination_heatmap.png" alt="Contamination Heatmap" class="img-fluid">
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Primer B Cross-Contamination</h5>
+                        </div>
+                        <div class="card-body">
+                            <img src="primer_b_heatmap.png" alt="Primer B Heatmap" class="img-fluid">
                         </div>
                     </div>
                 </div>
@@ -399,30 +423,6 @@
         });
 
         function generateContaminationPlots() {
-            // Contamination scatter plot
-            const scatterData = [{
-                x: reportData.samples.map(s => s.phix_percent || 0),
-                y: reportData.samples.map(s => s.vector_percent || 0),
-                text: reportData.samples.map(s => s.sample),
-                mode: 'markers',
-                type: 'scatter',
-                marker: {
-                    size: 8,
-                    color: reportData.samples.map(s => s.any_outlier ? 'red' : 'blue'),
-                    opacity: 0.7
-                }
-            }];
-
-            const scatterLayout = {
-                title: 'PhiX vs Vector Contamination',
-                xaxis: { title: 'PhiX Contamination (%)' },
-                yaxis: { title: 'Vector Contamination (%)' },
-                hovermode: 'closest',
-                showlegend: false
-            };
-
-            Plotly.newPlot('contamination-scatter', scatterData, scatterLayout);
-
             // Contamination histogram
             const histData = [{
                 x: reportData.samples.map(s => (s.phix_percent || 0) + (s.vector_percent || 0)),
@@ -432,8 +432,8 @@
             }];
 
             const histLayout = {
-                title: 'Total Contamination Distribution',
-                xaxis: { title: 'Total Contamination (%)' },
+                title: 'PhiX + UniVec Contamination Distribution',
+                xaxis: { title: 'Total PhiX + UniVec Contamination (%)' },
                 yaxis: { title: 'Number of Samples' },
                 showlegend: false
             };
@@ -444,7 +444,7 @@
         function generateReadProgressionPlot() {
             // Read progression plot showing retention at each step
             const steps = ['raw', 'fastp', 'host_depleted', 'rrna_removed', 'clean'];
-            const stepLabels = ['Raw', 'Trimmed', 'Host Depleted', 'rRNA Removed', 'Final'];
+            const stepLabels = ['Raw', 'Trimmed', 'Host Depleted', 'rRNA Removed', 'Final Deduplicated'];
 
             const traces = reportData.samples.map((sample, i) => {
                 const retentions = steps.map(step => {
@@ -468,7 +468,7 @@
                 xaxis: { title: 'QC Step' },
                 yaxis: { title: 'Read Retention (%)' },
                 hovermode: 'closest',
-                legend: { orientation: 'h', y: -0.2 }
+                showlegend: false
             };
 
             Plotly.newPlot('read-progression', traces, layout);
@@ -489,6 +489,8 @@
                             <strong>Read Retention:</strong> ${sample.clean_retention ? sample.clean_retention.toFixed(1) + '%' : 'N/A'}<br>
                             <strong>PhiX Contamination:</strong> ${sample.phix_percent !== undefined ? sample.phix_percent.toFixed(3) + '%' : 'N/A'}<br>
                             <strong>Vector Contamination:</strong> ${sample.vector_percent !== undefined ? sample.vector_percent.toFixed(3) + '%' : 'N/A'}<br>
+                            <strong>Host Contamination:</strong> ${sample.host_percent !== undefined && sample.host_percent !== 'NA' ? sample.host_percent.toFixed(1) + '%' : 'N/A'}<br>
+                            <strong>rRNA Contamination:</strong> ${sample.rrna_percent !== undefined && sample.rrna_percent !== 'NA' ? sample.rrna_percent.toFixed(1) + '%' : 'N/A'}<br>
                         </div>
                     </div>
                     ${sample.notes && sample.notes !== 'None' ? '<div class="mt-3"><strong>Issues:</strong> ' + sample.notes + '</div>' : ''}
