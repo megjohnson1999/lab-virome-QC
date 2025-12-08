@@ -152,7 +152,7 @@
             {% endif %}
 
             <!-- Summary Statistics Grid -->
-            <h5 class="text-muted mb-3">📊 Sample Counts & Quality</h5>
+            <h5 class="text-muted mb-3">Sample Counts & Quality</h5>
             <div class="summary-grid">
                 <div class="card metric-card">
                     <div class="card-body text-center">
@@ -185,7 +185,7 @@
                 </div>
             </div>
 
-            <h5 class="text-muted mb-3 mt-4">🧬 Read Processing Volume</h5>
+            <h5 class="text-muted mb-3 mt-4">Read Processing Volume</h5>
             <div class="summary-grid">
                 <div class="card metric-card">
                     <div class="card-body text-center">
@@ -230,7 +230,7 @@
                 </div>
             </div>
 
-            <h5 class="text-muted mb-3 mt-4">⚙️ Processing Efficiency</h5>
+            <h5 class="text-muted mb-3 mt-4">Processing Efficiency</h5>
             <div class="summary-grid">
                 <div class="card metric-card">
                     <div class="card-body text-center">
@@ -289,7 +289,7 @@
                 </div>
             </div>
 
-            <h5 class="text-muted mb-3 mt-4">🦠 Contamination Levels</h5>
+            <h5 class="text-muted mb-3 mt-4">Contamination Levels</h5>
             <div class="summary-grid">
                 <div class="card metric-card">
                     <div class="card-body text-center">
@@ -488,7 +488,8 @@
                         <div class="card-header">
                             <h5>Primer B Cross-Contamination</h5>
                             <small class="text-muted">
-                                <strong>⚠ Red warning symbols</strong> indicate samples with unexpected primer B reads, suggesting cross-contamination between samples during processing.
+                                <strong>Red circles with "!" symbols</strong> indicate samples with >5% unexpected primer B reads, suggesting cross-contamination between samples during processing.
+                                <span class="badge bg-info ms-2">Threshold: 5%</span>
                             </small>
                         </div>
                         <div class="card-body">

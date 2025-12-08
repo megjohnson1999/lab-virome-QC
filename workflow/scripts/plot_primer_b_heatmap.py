@@ -81,9 +81,10 @@ plt.yticks(rotation=0, fontsize=8)
 contaminated_samples = summary_df[summary_df['contamination_flag']]['sample'].tolist()
 for i, sample in enumerate(heatmap_data.index):
     if sample in contaminated_samples:
-        # Add red marker on y-axis for contaminated samples
-        ax.text(-0.5, i + 0.5, '⚠', ha='right', va='center',
-                fontsize=12, color='red', fontweight='bold')
+        # Add red marker on y-axis for contaminated samples - positioned to avoid text overlap
+        ax.text(-1.2, i + 0.5, '!', ha='center', va='center',
+                fontsize=14, color='red', fontweight='bold',
+                bbox=dict(boxstyle="circle,pad=0.1", facecolor='red', alpha=0.8))
 
 # Adjust layout
 plt.tight_layout()
@@ -96,7 +97,7 @@ plt.close()
 print("\n=== Heatmap Statistics ===")
 print(f"Samples: {len(heatmap_data)}")
 print(f"Primer B variants: {len(heatmap_data.columns)}")
-print(f"Contaminated samples (marked with ⚠): {len(contaminated_samples)}")
+print(f"Contaminated samples (marked with red !): {len(contaminated_samples)}")
 
 # Print dominant primer B distribution
 print("\nDominant Primer B Distribution:")
