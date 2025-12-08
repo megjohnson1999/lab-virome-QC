@@ -12,6 +12,14 @@ Output: Cleaned paired-end reads in {OUTDIR}/clean_reads/
 # FastQC and Quality Assessment
 # ================================================================================
 
+def get_fastqc_basename(wildcards, input_type):
+    """Get the basename for FastQC output files based on input filename"""
+    import os
+    filename = SAMPLES[wildcards.sample][input_type]
+    # Get basename without .fastq.gz extension
+    basename = os.path.basename(filename).replace('.fastq.gz', '').replace('.fq.gz', '')
+    return basename
+
 rule fastqc_raw:
     """
     Run FastQC on raw reads to assess initial quality and identify artifacts
@@ -20,10 +28,10 @@ rule fastqc_raw:
         r1 = lambda wc: SAMPLES[wc.sample]["r1"],
         r2 = lambda wc: SAMPLES[wc.sample]["r2"]
     output:
-        html_r1 = f"{OUTDIR}/fastqc/raw/{{sample}}_R1_fastqc.html",
-        html_r2 = f"{OUTDIR}/fastqc/raw/{{sample}}_R2_fastqc.html",
-        zip_r1 = f"{OUTDIR}/fastqc/raw/{{sample}}_R1_fastqc.zip",
-        zip_r2 = f"{OUTDIR}/fastqc/raw/{{sample}}_R2_fastqc.zip"
+        html_r1 = lambda wc: f"{OUTDIR}/fastqc/raw/{get_fastqc_basename(wc, 'r1')}_fastqc.html",
+        html_r2 = lambda wc: f"{OUTDIR}/fastqc/raw/{get_fastqc_basename(wc, 'r2')}_fastqc.html",
+        zip_r1 = lambda wc: f"{OUTDIR}/fastqc/raw/{get_fastqc_basename(wc, 'r1')}_fastqc.zip",
+        zip_r2 = lambda wc: f"{OUTDIR}/fastqc/raw/{get_fastqc_basename(wc, 'r2')}_fastqc.zip"
     log:
         f"{OUTDIR}/logs/fastqc_raw/{{sample}}.log"
     threads: 2
