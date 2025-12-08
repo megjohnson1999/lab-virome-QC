@@ -729,7 +729,7 @@ rule multiqc:
     """
     input:
         # FastQC reports
-        expand(f"{OUTDIR}/fastqc/raw/{{sample}}_R1_fastqc.zip", sample=SAMPLES),
+        expand(f"{OUTDIR}/fastqc/raw/{r1_base}_fastqc.zip", sample=SAMPLES),
         expand(f"{OUTDIR}/fastqc/trimmed/{{sample}}_R1_fastqc.zip", sample=SAMPLES),
         expand(f"{OUTDIR}/fastqc/final/{{sample}}_R1_fastqc.zip", sample=SAMPLES),
         # fastp reports
