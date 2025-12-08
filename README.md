@@ -46,9 +46,9 @@ Raw Reads (NovaSeq FASTQ)
     ↓
 [6] minimap2 (host depletion) ← QC metric for VLP success
     ↓
-[7] BBDuk (rRNA removal)
+[7] ViromeQC (enrichment assessment) ← PRIMARY QC metric
     ↓
-[8] ViromeQC (enrichment assessment) ← PRIMARY QC metric
+[8] BBDuk (rRNA removal)
     ↓
 [9] FastQC (final clean reads)
     ↓
