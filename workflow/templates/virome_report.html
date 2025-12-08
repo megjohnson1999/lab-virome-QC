@@ -564,23 +564,85 @@
         });
 
         function generateContaminationPlots() {
-            // PhiX/UniVec contamination histogram
-            const histData = [{
-                x: reportData.samples.map(s => (s.phix_percent || 0) + (s.vector_percent || 0)),
-                type: 'histogram',
-                nbinsx: 10,
-                marker: { color: '#007bff' }
-            }];
+            // PhiX/UniVec contamination histogram with professional styling to match rRNA
+            const contaminationData = reportData.samples.map(s => (s.phix_percent || 0) + (s.vector_percent || 0)).filter(x => x !== undefined && x !== null);
 
-            const histLayout = {
-                title: 'PhiX + UniVec Contamination Distribution',
-                xaxis: { title: 'Total PhiX + UniVec Contamination (%)' },
-                yaxis: { title: 'Number of Samples' },
-                showlegend: false,
-                margin: { t: 40, b: 50, l: 50, r: 20 }
-            };
+            if (contaminationData.length > 0) {
+                // Calculate statistics
+                const mean = contaminationData.reduce((a, b) => a + b, 0) / contaminationData.length;
+                const sortedData = [...contaminationData].sort((a, b) => a - b);
+                const median = sortedData.length % 2 === 0
+                    ? (sortedData[sortedData.length/2 - 1] + sortedData[sortedData.length/2]) / 2
+                    : sortedData[Math.floor(sortedData.length/2)];
 
-            Plotly.newPlot('contamination-histogram', histData, histLayout);
+                const histData = [{
+                    x: contaminationData,
+                    type: 'histogram',
+                    nbinsx: 15,
+                    marker: {
+                        color: '#5B9BD5',  // Steel blue color matching rRNA
+                        line: { color: '#2F5F8F', width: 1 }
+                    },
+                    name: 'Sample Count'
+                }];
+
+                // Add mean and median lines (use a reasonable max height estimate)
+                const maxHeight = Math.ceil(contaminationData.length / 3); // Estimate max bin height
+
+                const meanLine = {
+                    type: 'scatter',
+                    mode: 'lines',
+                    x: [mean, mean],
+                    y: [0, maxHeight],
+                    line: { color: '#FF8C00', width: 3, dash: 'dash' },
+                    name: `Mean: ${mean.toFixed(3)}%`,
+                    showlegend: true,
+                    hoverinfo: 'none'
+                };
+
+                const medianLine = {
+                    type: 'scatter',
+                    mode: 'lines',
+                    x: [median, median],
+                    y: [0, maxHeight],
+                    line: { color: '#DC3545', width: 3, dash: 'dash' },
+                    name: `Median: ${median.toFixed(3)}%`,
+                    showlegend: true,
+                    hoverinfo: 'none'
+                };
+
+                const histLayout = {
+                    title: {
+                        text: `PhiX/UniVec Contamination Distribution (n=${contaminationData.length})<br><sub>PhiX174 + Vector/Plasmid Detection</sub>`,
+                        font: { size: 16, family: 'Arial, sans-serif' }
+                    },
+                    xaxis: {
+                        title: 'Total PhiX + UniVec Contamination (%)',
+                        gridcolor: '#E5E5E5'
+                    },
+                    yaxis: {
+                        title: 'Number of Samples',
+                        gridcolor: '#E5E5E5'
+                    },
+                    showlegend: true,
+                    legend: {
+                        x: 0.02,
+                        y: 0.98,
+                        bgcolor: 'rgba(255,255,255,0.8)',
+                        bordercolor: '#E5E5E5',
+                        borderwidth: 1
+                    },
+                    plot_bgcolor: 'white',
+                    paper_bgcolor: 'white',
+                    margin: { t: 80, b: 50, l: 60, r: 20 }
+                };
+
+                Plotly.newPlot('contamination-histogram', [...histData, meanLine, medianLine], histLayout);
+            } else {
+                // Display message if no contamination data available
+                document.getElementById('contamination-histogram').innerHTML =
+                    '<div class="text-center text-muted p-4">No PhiX/UniVec contamination data available</div>';
+            }
 
             // rRNA contamination histogram
             const rrnaData = reportData.samples.map(s => s.rrna_percent).filter(x => x !== undefined && x !== null && x !== 'NA');
