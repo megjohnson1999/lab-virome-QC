@@ -152,6 +152,7 @@
             {% endif %}
 
             <!-- Summary Statistics Grid -->
+            <h5 class="text-muted mb-3">📊 Sample Counts & Quality</h5>
             <div class="summary-grid">
                 <div class="card metric-card">
                     <div class="card-body text-center">
@@ -164,39 +165,28 @@
                 <div class="card metric-card">
                     <div class="card-body text-center">
                         <h3 class="card-title text-warning">{{ batch_statistics.outlier_count }}</h3>
-                        <p class="card-text">Outliers</p>
-                        <small class="text-muted">Statistical outliers detected</small>
+                        <p class="card-text">Statistical Outliers</p>
+                        <small class="text-muted" title="Samples with unusual enrichment, retention, contamination, or quality scores using IQR method">IQR-based detection</small>
                     </div>
                 </div>
 
                 <div class="card metric-card">
                     <div class="card-body text-center">
-                        <h3 class="card-title text-info">
-                            {% if batch_statistics.clean_retention_median %}
-                                {{ "%.1f"|format(batch_statistics.clean_retention_median) }}%
+                        <h3 class="card-title text-danger">
+                            {% if batch_statistics.low_coverage_count %}
+                                {{ batch_statistics.low_coverage_count }}
                             {% else %}
-                                N/A
+                                0
                             {% endif %}
                         </h3>
-                        <p class="card-text">Median Read Retention</p>
-                        <small class="text-muted">After all QC steps</small>
+                        <p class="card-text">Low Coverage Samples</p>
+                        <small class="text-muted">< 1M final reads</small>
                     </div>
                 </div>
+            </div>
 
-                <div class="card metric-card">
-                    <div class="card-body text-center">
-                        <h3 class="card-title text-success">
-                            {% if batch_statistics.vector_percent_median is defined %}
-                                {{ "%.3f"|format(batch_statistics.vector_percent_median) }}%
-                            {% else %}
-                                N/A
-                            {% endif %}
-                        </h3>
-                        <p class="card-text">Median Contamination</p>
-                        <small class="text-muted">Vector contamination</small>
-                    </div>
-                </div>
-
+            <h5 class="text-muted mb-3 mt-4">🧬 Read Processing Volume</h5>
+            <div class="summary-grid">
                 <div class="card metric-card">
                     <div class="card-body text-center">
                         <h3 class="card-title text-primary">
@@ -236,6 +226,96 @@
                         </h3>
                         <p class="card-text">Median Sample Size</p>
                         <small class="text-muted">Raw reads per sample</small>
+                    </div>
+                </div>
+            </div>
+
+            <h5 class="text-muted mb-3 mt-4">⚙️ Processing Efficiency</h5>
+            <div class="summary-grid">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-info">
+                            {% if batch_statistics.clean_retention_median %}
+                                {{ "%.1f"|format(batch_statistics.clean_retention_median) }}%
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </h3>
+                        <p class="card-text">Median Read Retention</p>
+                        <small class="text-muted">Overall pipeline efficiency</small>
+                    </div>
+                </div>
+
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-warning">
+                            {% if batch_statistics.median_trimming_loss_pct %}
+                                {{ batch_statistics.median_trimming_loss_pct }}%
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </h3>
+                        <p class="card-text">Median Trimming Loss</p>
+                        <small class="text-muted">Quality/adapter removal</small>
+                    </div>
+                </div>
+
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-danger">
+                            {% if batch_statistics.median_host_removal_pct %}
+                                {{ batch_statistics.median_host_removal_pct }}%
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </h3>
+                        <p class="card-text">Median Host Removal</p>
+                        <small class="text-muted">Human DNA contamination</small>
+                    </div>
+                </div>
+
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-secondary">
+                            {% if batch_statistics.median_rrna_removal_pct %}
+                                {{ batch_statistics.median_rrna_removal_pct }}%
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </h3>
+                        <p class="card-text">Median rRNA Removal</p>
+                        <small class="text-muted">Ribosomal RNA depletion</small>
+                    </div>
+                </div>
+            </div>
+
+            <h5 class="text-muted mb-3 mt-4">🦠 Contamination Levels</h5>
+            <div class="summary-grid">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-success">
+                            {% if batch_statistics.phix_percent_median is defined %}
+                                {{ "%.3f"|format(batch_statistics.phix_percent_median) }}%
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </h3>
+                        <p class="card-text">Median PhiX</p>
+                        <small class="text-muted">Sequencing control</small>
+                    </div>
+                </div>
+
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-success">
+                            {% if batch_statistics.vector_percent_median is defined %}
+                                {{ "%.3f"|format(batch_statistics.vector_percent_median) }}%
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </h3>
+                        <p class="card-text">Median Vector</p>
+                        <small class="text-muted">Cloning vector contamination</small>
                     </div>
                 </div>
             </div>
@@ -407,6 +487,9 @@
                     <div class="card">
                         <div class="card-header">
                             <h5>Primer B Cross-Contamination</h5>
+                            <small class="text-muted">
+                                <strong>⚠ Red warning symbols</strong> indicate samples with unexpected primer B reads, suggesting cross-contamination between samples during processing.
+                            </small>
                         </div>
                         <div class="card-body">
                             <img src="primer_b_heatmap.png" alt="Primer B Heatmap" class="img-fluid">

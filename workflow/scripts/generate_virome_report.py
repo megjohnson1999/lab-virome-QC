@@ -376,6 +376,23 @@ class ViromeQCReportGenerator:
             # Calculate low coverage samples (< 1M final reads)
             stats['low_coverage_count'] = int(len(self.unified_data[self.unified_data['clean'] < 1000000]))
 
+        # Calculate processing efficiency statistics
+        if 'raw' in self.unified_data.columns and 'fastp' in self.unified_data.columns:
+            trimming_loss = ((self.unified_data['raw'] - self.unified_data['fastp']) / self.unified_data['raw'] * 100)
+            stats['median_trimming_loss_pct'] = round(float(trimming_loss.median()), 1)
+
+        if 'fastp' in self.unified_data.columns and 'host_depleted' in self.unified_data.columns:
+            host_removal = ((self.unified_data['fastp'] - self.unified_data['host_depleted']) / self.unified_data['fastp'] * 100)
+            stats['median_host_removal_pct'] = round(float(host_removal.median()), 1)
+
+        if 'host_depleted' in self.unified_data.columns and 'rrna_removed' in self.unified_data.columns:
+            rrna_removal = ((self.unified_data['host_depleted'] - self.unified_data['rrna_removed']) / self.unified_data['host_depleted'] * 100)
+            stats['median_rrna_removal_pct'] = round(float(rrna_removal.median()), 1)
+
+        if 'raw' in self.unified_data.columns and 'clean' in self.unified_data.columns:
+            total_loss = ((self.unified_data['raw'] - self.unified_data['clean']) / self.unified_data['raw'] * 100)
+            stats['median_total_loss_pct'] = round(float(total_loss.median()), 1)
+
         # Calculate median values for key metrics (convert to native Python types for JSON serialization)
         numeric_cols = ['enrichment_score', 'clean_retention', 'phix_percent',
                        'vector_percent', 'quality_score']
