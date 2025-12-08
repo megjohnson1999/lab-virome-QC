@@ -323,7 +323,7 @@
                             <td>{{ "%.1f"|format(sample.quality_score) if sample.quality_score else 'N/A' }}</td>
                             <td>
                                 {% if sample.raw %}
-                                    {{ "{:,.0f}"|format(sample.raw) }}
+                                    <span class="read-count" data-value="{{ sample.raw }}">{{ "%.0f"|format(sample.raw|float) }}</span>
                                     {% if sample.raw < 1000000 %}
                                         <small class="text-danger">(Low)</small>
                                     {% endif %}
@@ -333,7 +333,7 @@
                             </td>
                             <td>
                                 {% if sample.clean %}
-                                    {{ "{:,.0f}"|format(sample.clean) }}
+                                    <span class="read-count" data-value="{{ sample.clean }}">{{ "%.0f"|format(sample.clean|float) }}</span>
                                     {% if sample.clean < 1000000 %}
                                         <small class="text-warning">(< 1M)</small>
                                     {% endif %}
@@ -449,6 +449,14 @@
         const reportData = {{ report_data | tojson }};
 
         $(document).ready(function() {
+            // Format read counts with commas
+            $('.read-count').each(function() {
+                const value = $(this).data('value');
+                if (value && !isNaN(value)) {
+                    $(this).text(parseInt(value).toLocaleString());
+                }
+            });
+
             // Initialize DataTable
             const table = $('#sample-table').DataTable({
                 pageLength: 25,
@@ -558,7 +566,7 @@
                             <h6 class="text-success">Read Counts</h6>
                             <strong>Raw Reads:</strong> ${formatNumber(sample.raw)}<br>
                             <strong>Final Reads:</strong> ${formatNumber(sample.clean)} ${sample.clean && sample.clean < 1000000 ? '<small class="text-warning">(Low coverage)</small>' : ''}<br>
-                            <strong>Reads Retained:</strong> ${sample.raw && sample.clean ? formatNumber(sample.raw - sample.clean) + ' lost' : 'N/A'}<br>
+                            <strong>Reads Lost:</strong> ${sample.raw && sample.clean ? formatNumber(sample.raw - sample.clean) : 'N/A'}<br>
                         </div>
                         <div class="col-md-6">
                             <h6 class="text-warning">Contamination Levels</h6>
