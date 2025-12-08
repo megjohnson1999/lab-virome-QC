@@ -12,19 +12,15 @@ Output: Cleaned paired-end reads in {OUTDIR}/clean_reads/
 # FastQC and Quality Assessment
 # ================================================================================
 
-def get_fastqc_filename(wildcards, read_type):
-    """Generate FastQC output filename based on config naming convention"""
-    # Get the naming pattern from config
-    auto_config = config.get("sample_auto_detection", {})
-    if read_type == "r1":
-        pattern = auto_config.get("r1_pattern", "*_R1.fastq.gz")
-    else:
-        pattern = auto_config.get("r2_pattern", "*_R2.fastq.gz")
+# Generate FastQC output patterns based on config naming convention
+auto_config = config.get("sample_auto_detection", {})
+r1_pattern = auto_config.get("r1_pattern", "*_R1.fastq.gz")
+r2_pattern = auto_config.get("r2_pattern", "*_R2.fastq.gz")
 
-    # Replace the wildcard with sample name and remove file extension
-    # Pattern like "*_R1_001.fastq.gz" becomes "{sample}_R1_001"
-    filename_base = pattern.replace("*", wildcards.sample).replace(".fastq.gz", "").replace(".fq.gz", "")
-    return filename_base
+# Extract base names by removing extensions
+# "*_R1_001.fastq.gz" becomes "{sample}_R1_001"
+r1_base = r1_pattern.replace("*", "{sample}").replace(".fastq.gz", "").replace(".fq.gz", "")
+r2_base = r2_pattern.replace("*", "{sample}").replace(".fastq.gz", "").replace(".fq.gz", "")
 
 rule fastqc_raw:
     """
@@ -34,10 +30,10 @@ rule fastqc_raw:
         r1 = lambda wc: SAMPLES[wc.sample]["r1"],
         r2 = lambda wc: SAMPLES[wc.sample]["r2"]
     output:
-        html_r1 = lambda wc: f"{OUTDIR}/fastqc/raw/{get_fastqc_filename(wc, 'r1')}_fastqc.html",
-        html_r2 = lambda wc: f"{OUTDIR}/fastqc/raw/{get_fastqc_filename(wc, 'r2')}_fastqc.html",
-        zip_r1 = lambda wc: f"{OUTDIR}/fastqc/raw/{get_fastqc_filename(wc, 'r1')}_fastqc.zip",
-        zip_r2 = lambda wc: f"{OUTDIR}/fastqc/raw/{get_fastqc_filename(wc, 'r2')}_fastqc.zip"
+        html_r1 = f"{OUTDIR}/fastqc/raw/{r1_base}_fastqc.html",
+        html_r2 = f"{OUTDIR}/fastqc/raw/{r2_base}_fastqc.html",
+        zip_r1 = f"{OUTDIR}/fastqc/raw/{r1_base}_fastqc.zip",
+        zip_r2 = f"{OUTDIR}/fastqc/raw/{r2_base}_fastqc.zip"
     log:
         f"{OUTDIR}/logs/fastqc_raw/{{sample}}.log"
     threads: 2
