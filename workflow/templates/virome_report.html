@@ -441,13 +441,23 @@
 
             <!-- Contamination Distribution -->
             <div class="row mb-3">
-                <div class="col-12">
+                <div class="col-md-6">
                     <div class="card">
                         <div class="card-header">
                             <h5>PhiX/UniVec Contamination Distribution</h5>
                         </div>
                         <div class="card-body">
                             <div id="contamination-histogram" class="plotly-container"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>rRNA Contamination Distribution</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="rrna-histogram" class="plotly-container"></div>
                         </div>
                     </div>
                 </div>
@@ -582,7 +592,7 @@
         });
 
         function generateContaminationPlots() {
-            // Contamination histogram
+            // PhiX/UniVec contamination histogram
             const histData = [{
                 x: reportData.samples.map(s => (s.phix_percent || 0) + (s.vector_percent || 0)),
                 type: 'histogram',
@@ -594,10 +604,37 @@
                 title: 'PhiX + UniVec Contamination Distribution',
                 xaxis: { title: 'Total PhiX + UniVec Contamination (%)' },
                 yaxis: { title: 'Number of Samples' },
-                showlegend: false
+                showlegend: false,
+                margin: { t: 40, b: 50, l: 50, r: 20 }
             };
 
             Plotly.newPlot('contamination-histogram', histData, histLayout);
+
+            // rRNA contamination histogram
+            const rrnaData = reportData.samples.map(s => s.rrna_percent).filter(x => x !== undefined && x !== null && x !== 'NA');
+
+            if (rrnaData.length > 0) {
+                const rrnaHistData = [{
+                    x: rrnaData,
+                    type: 'histogram',
+                    nbinsx: 15,
+                    marker: { color: '#dc3545' }
+                }];
+
+                const rrnaHistLayout = {
+                    title: 'rRNA Contamination Distribution',
+                    xaxis: { title: 'rRNA Contamination (%)' },
+                    yaxis: { title: 'Number of Samples' },
+                    showlegend: false,
+                    margin: { t: 40, b: 50, l: 50, r: 20 }
+                };
+
+                Plotly.newPlot('rrna-histogram', rrnaHistData, rrnaHistLayout);
+            } else {
+                // Display message if no rRNA data available
+                document.getElementById('rrna-histogram').innerHTML =
+                    '<div class="text-center text-muted p-4">No rRNA contamination data available</div>';
+            }
         }
 
         function generateReadProgressionPlot() {
