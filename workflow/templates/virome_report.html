@@ -129,17 +129,20 @@
             {% if batch_statistics.outlier_count > batch_statistics.total_samples * 0.2 %}
             <div class="alert batch-alert alert-warning" role="alert">
                 <h5><i class="bi bi-exclamation-triangle-fill"></i> Many Outliers Detected</h5>
-                <p>{{ batch_statistics.outlier_count }} samples flagged as statistical outliers. Review contamination patterns and quality metrics.</p>
+                <p><strong>{{ batch_statistics.outlier_count }}</strong> of {{ batch_statistics.total_samples }} samples have unusual quality metrics that deviate significantly from the batch median. This high proportion suggests potential batch effects, sequencing issues, or genuine biological variation requiring investigation.</p>
+                <small class="text-muted"><i class="bi bi-lightbulb"></i> <strong>What this means:</strong> Outliers are identified using the IQR statistical method (Q1-1.5×IQR to Q3+1.5×IQR range). Review contamination levels, read quality, and processing efficiency for flagged samples.</small>
             </div>
             {% elif batch_statistics.outlier_count > 0 %}
             <div class="alert batch-alert alert-info" role="alert">
                 <h5><i class="bi bi-info-circle-fill"></i> Outliers Detected</h5>
-                <p>{{ batch_statistics.outlier_count }} samples flagged as statistical outliers. Check individual sample metrics.</p>
+                <p><strong>{{ batch_statistics.outlier_count }}</strong> of {{ batch_statistics.total_samples }} samples have quality metrics that deviate from the typical range for this batch. These may indicate samples requiring additional attention or genuine biological differences.</p>
+                <small class="text-muted"><i class="bi bi-lightbulb"></i> <strong>What this means:</strong> Statistical outliers are samples outside the normal distribution (IQR method). Check their contamination levels, quality scores, and read processing metrics in the table below.</small>
             </div>
             {% else %}
             <div class="alert batch-alert alert-success" role="alert">
                 <h5><i class="bi bi-check-circle-fill"></i> Batch Processing Complete</h5>
-                <p>{{ batch_statistics.total_samples }} samples processed with no statistical outliers detected.</p>
+                <p>All {{ batch_statistics.total_samples }} samples have quality metrics within the expected statistical range. No outliers detected using IQR analysis.</p>
+                <small class="text-muted"><i class="bi bi-info-circle"></i> <strong>What this means:</strong> All samples have consistent quality scores, contamination levels, and processing efficiency - indicating good batch quality and reproducible results.</small>
             </div>
             {% endif %}
 
@@ -166,7 +169,12 @@
                     <div class="card-body text-center">
                         <h3 class="card-title text-warning">{{ batch_statistics.outlier_count }}</h3>
                         <p class="card-text">Statistical Outliers</p>
-                        <small class="text-muted" title="Samples with unusual enrichment, retention, contamination, or quality scores using IQR method">IQR-based detection</small>
+                        <small class="text-muted">
+                            <a href="#" data-bs-toggle="tooltip" data-bs-placement="bottom"
+                               data-bs-title="Outliers are samples that deviate significantly from the group using the IQR (Interquartile Range) method. Values below Q1-1.5×IQR or above Q3+1.5×IQR are flagged. These may indicate sequencing issues, contamination, or genuine biological differences requiring review.">
+                                <i class="bi bi-info-circle"></i> IQR-based detection
+                            </a>
+                        </small>
                     </div>
                 </div>
 
@@ -347,7 +355,11 @@
             <!-- Filter Buttons -->
             <div class="filter-buttons">
                 <button class="btn btn-outline-primary" id="filter-all">All Samples</button>
-                <button class="btn btn-outline-warning" id="filter-outliers">Outliers Only</button>
+                <button class="btn btn-outline-warning" id="filter-outliers">
+                    Outliers Only
+                    <i class="bi bi-info-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                       data-bs-title="Shows samples with quality scores, contamination levels, or read processing metrics that deviate significantly from the batch median (using IQR statistical method)"></i>
+                </button>
             </div>
 
             <!-- Sample Table -->
@@ -795,6 +807,85 @@
                 $('#sampleDetailModal').modal('show');
             }
         }
+
+        // Initialize tooltips for outlier explanations
+        document.addEventListener('DOMContentLoaded', function() {
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+        });
     </script>
+
+    <!-- Methodology Modal -->
+    <div class="modal fade" id="methodologyModal" tabindex="-1" aria-labelledby="methodologyModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="methodologyModalLabel">Statistical Outlier Detection Methodology</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <h6><i class="bi bi-graph-up"></i> IQR (Interquartile Range) Method</h6>
+                    <p>This report uses the IQR statistical method to identify outliers across quality metrics:</p>
+                    <ul>
+                        <li><strong>Q1 (25th percentile):</strong> The value below which 25% of samples fall</li>
+                        <li><strong>Q3 (75th percentile):</strong> The value below which 75% of samples fall</li>
+                        <li><strong>IQR = Q3 - Q1:</strong> The spread of the middle 50% of samples</li>
+                        <li><strong>Outlier thresholds:</strong> Values < Q1-1.5×IQR or > Q3+1.5×IQR</li>
+                    </ul>
+
+                    <h6><i class="bi bi-target"></i> Metrics Evaluated</h6>
+                    <p>Samples are flagged as outliers based on unusual values in any of these metrics:</p>
+                    <ul>
+                        <li><strong>Quality Score:</strong> Overall sample quality assessment</li>
+                        <li><strong>Enrichment Score:</strong> Viral enrichment effectiveness</li>
+                        <li><strong>Read Retention:</strong> Percentage of reads surviving quality control</li>
+                        <li><strong>Contamination Levels:</strong> PhiX, vector, host, and rRNA contamination</li>
+                    </ul>
+
+                    <h6><i class="bi bi-lightbulb"></i> Interpreting Outliers</h6>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h7><span class="badge bg-warning">Potential Issues:</span></h7>
+                            <ul>
+                                <li>Library preparation problems</li>
+                                <li>Sequencing quality issues</li>
+                                <li>Sample contamination</li>
+                                <li>Poor viral enrichment</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <h7><span class="badge bg-info">Biological Variation:</span></h7>
+                            <ul>
+                                <li>Genuine low viral load samples</li>
+                                <li>Different sample types</li>
+                                <li>Natural biological diversity</li>
+                                <li>Expected experimental variation</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info mt-3">
+                        <i class="bi bi-info-circle"></i> <strong>Recommendation:</strong> Review outlier samples individually to determine if they require reprocessing, additional analysis, or represent genuine biological differences.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add methodology link in footer -->
+    <footer class="mt-5 py-3 border-top">
+        <div class="container text-center text-muted">
+            <small>
+                ViromeQC Report |
+                <a href="#" data-bs-toggle="modal" data-bs-target="#methodologyModal">Statistical Methods</a> |
+                Generated on {{ current_timestamp }}
+            </small>
+        </div>
+    </footer>
 </body>
 </html>
