@@ -586,22 +586,78 @@
             const rrnaData = reportData.samples.map(s => s.rrna_percent).filter(x => x !== undefined && x !== null && x !== 'NA');
 
             if (rrnaData.length > 0) {
+                // Calculate statistics
+                const mean = rrnaData.reduce((a, b) => a + b, 0) / rrnaData.length;
+                const sortedData = [...rrnaData].sort((a, b) => a - b);
+                const median = sortedData.length % 2 === 0
+                    ? (sortedData[sortedData.length/2 - 1] + sortedData[sortedData.length/2]) / 2
+                    : sortedData[Math.floor(sortedData.length/2)];
+
                 const rrnaHistData = [{
                     x: rrnaData,
                     type: 'histogram',
                     nbinsx: 15,
-                    marker: { color: '#dc3545' }
+                    marker: {
+                        color: '#5B9BD5',  // Steel blue color
+                        line: { color: '#2F5F8F', width: 1 }
+                    },
+                    name: 'Sample Count'
                 }];
 
-                const rrnaHistLayout = {
-                    title: 'rRNA Contamination Distribution',
-                    xaxis: { title: 'rRNA Contamination (%)' },
-                    yaxis: { title: 'Number of Samples' },
-                    showlegend: false,
-                    margin: { t: 40, b: 50, l: 50, r: 20 }
+                // Add mean and median lines (use a reasonable max height estimate)
+                const maxHeight = Math.ceil(rrnaData.length / 3); // Estimate max bin height
+
+                const meanLine = {
+                    type: 'scatter',
+                    mode: 'lines',
+                    x: [mean, mean],
+                    y: [0, maxHeight],
+                    line: { color: '#FF8C00', width: 3, dash: 'dash' },
+                    name: `Mean: ${mean.toFixed(2)}%`,
+                    showlegend: true,
+                    hoverinfo: 'none'
                 };
 
-                Plotly.newPlot('rrna-histogram', rrnaHistData, rrnaHistLayout);
+                const medianLine = {
+                    type: 'scatter',
+                    mode: 'lines',
+                    x: [median, median],
+                    y: [0, maxHeight],
+                    line: { color: '#DC3545', width: 3, dash: 'dash' },
+                    name: `Median: ${median.toFixed(2)}%`,
+                    showlegend: true,
+                    hoverinfo: 'none'
+                };
+
+                const rrnaHistLayout = {
+                    title: {
+                        text: `rRNA Contamination Distribution (n=${rrnaData.length})<br><sub>SILVA 138.1 SSU+LSU Database</sub>`,
+                        font: { size: 16, family: 'Arial, sans-serif' }
+                    },
+                    xaxis: {
+                        title: 'rRNA Contamination (%)',
+                        range: [0, 100],
+                        dtick: 20,
+                        gridcolor: '#E5E5E5'
+                    },
+                    yaxis: {
+                        title: 'Number of Samples',
+                        gridcolor: '#E5E5E5'
+                    },
+                    showlegend: true,
+                    legend: {
+                        x: 0.02,
+                        y: 0.98,
+                        bgcolor: 'rgba(255, 255, 255, 0.9)',
+                        bordercolor: '#CCCCCC',
+                        borderwidth: 1
+                    },
+                    plot_bgcolor: 'white',
+                    paper_bgcolor: 'white',
+                    margin: { t: 80, b: 50, l: 60, r: 20 }
+                };
+
+                Plotly.newPlot('rrna-histogram', [...rrnaHistData, meanLine, medianLine], rrnaHistLayout);
             } else {
                 // Display message if no rRNA data available
                 document.getElementById('rrna-histogram').innerHTML =
