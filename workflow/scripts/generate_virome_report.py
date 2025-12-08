@@ -412,14 +412,9 @@ class ViromeQCReportGenerator:
         # Convert DataFrame to dict for JSON serialization
         samples_data = self.unified_data.to_dict('records')
 
-        # Get top outliers for highlighting
-        outlier_samples = self.unified_data[self.unified_data['any_outlier'] == True]
-        top_outliers = outlier_samples.nsmallest(5, 'quality_score').to_dict('records')
-
         return {
             'batch_statistics': batch_stats,
             'samples': samples_data,
-            'top_outliers': top_outliers,
             'config': self.config,
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
@@ -444,7 +439,6 @@ class ViromeQCReportGenerator:
             html_content = template.render(
                 batch_statistics=report_data['batch_statistics'],
                 samples=report_data['samples'],
-                top_outliers=report_data['top_outliers'],
                 config=report_data['config'],
                 timestamp=report_data['timestamp'],
                 report_data=report_data  # Full data for JavaScript

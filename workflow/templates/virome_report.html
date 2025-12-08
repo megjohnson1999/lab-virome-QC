@@ -320,34 +320,6 @@
                 </div>
             </div>
 
-            <!-- Top Outliers/Problem Samples -->
-            {% if top_outliers|length > 0 %}
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5><i class="bi bi-exclamation-diamond"></i> Samples Requiring Attention</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        {% for sample in top_outliers %}
-                        <div class="col-md-6 col-lg-4 mb-3">
-                            <div class="card sample-card outlier-highlight" onclick="showSampleDetails('{{ sample.sample }}')">
-                                <div class="card-body">
-                                    <h6 class="card-title">{{ sample.sample[:30] }}{% if sample.sample|length > 30 %}...{% endif %}</h6>
-                                    <p class="card-text">
-                                        <strong>Quality Score: {{ "%.1f"|format(sample.quality_score) if sample.quality_score else 'N/A' }}</strong><br>
-                                        <small>Enrichment: {{ "%.1f"|format(sample.enrichment_score) if sample.enrichment_score else 'N/A' }}</small>
-                                    </p>
-                                    {% if sample.notes and sample.notes != 'None' %}
-                                    <small class="text-danger">{{ sample.notes }}</small>
-                                    {% endif %}
-                                </div>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-            {% endif %}
         </section>
 
         <!-- Read Processing Summary -->
