@@ -360,31 +360,31 @@ class ViromeQCReportGenerator:
             'outlier_count': len(self.unified_data[self.unified_data['any_outlier'] == True]),
         }
 
-        # Calculate read count statistics
+        # Calculate read count statistics (convert to native Python types for JSON serialization)
         if 'raw' in self.unified_data.columns:
-            stats['total_reads'] = self.unified_data['raw'].sum()
-            stats['total_reads_millions'] = round(self.unified_data['raw'].sum() / 1000000, 1)
-            stats['median_raw_reads'] = self.unified_data['raw'].median()
-            stats['median_raw_reads_millions'] = round(self.unified_data['raw'].median() / 1000000, 1)
+            stats['total_reads'] = int(self.unified_data['raw'].sum())
+            stats['total_reads_millions'] = round(float(self.unified_data['raw'].sum()) / 1000000, 1)
+            stats['median_raw_reads'] = int(self.unified_data['raw'].median())
+            stats['median_raw_reads_millions'] = round(float(self.unified_data['raw'].median()) / 1000000, 1)
 
         if 'clean' in self.unified_data.columns:
-            stats['total_final_reads'] = self.unified_data['clean'].sum()
-            stats['total_final_reads_millions'] = round(self.unified_data['clean'].sum() / 1000000, 1)
-            stats['median_final_reads'] = self.unified_data['clean'].median()
-            stats['median_final_reads_millions'] = round(self.unified_data['clean'].median() / 1000000, 1)
+            stats['total_final_reads'] = int(self.unified_data['clean'].sum())
+            stats['total_final_reads_millions'] = round(float(self.unified_data['clean'].sum()) / 1000000, 1)
+            stats['median_final_reads'] = int(self.unified_data['clean'].median())
+            stats['median_final_reads_millions'] = round(float(self.unified_data['clean'].median()) / 1000000, 1)
 
             # Calculate low coverage samples (< 1M final reads)
-            stats['low_coverage_count'] = len(self.unified_data[self.unified_data['clean'] < 1000000])
+            stats['low_coverage_count'] = int(len(self.unified_data[self.unified_data['clean'] < 1000000]))
 
-        # Calculate median values for key metrics
+        # Calculate median values for key metrics (convert to native Python types for JSON serialization)
         numeric_cols = ['enrichment_score', 'clean_retention', 'phix_percent',
                        'vector_percent', 'quality_score']
 
         for col in numeric_cols:
             if col in self.unified_data.columns:
-                stats[f'{col}_median'] = self.unified_data[col].median()
-                stats[f'{col}_mean'] = self.unified_data[col].mean()
-                stats[f'{col}_std'] = self.unified_data[col].std()
+                stats[f'{col}_median'] = float(self.unified_data[col].median()) if pd.notna(self.unified_data[col].median()) else None
+                stats[f'{col}_mean'] = float(self.unified_data[col].mean()) if pd.notna(self.unified_data[col].mean()) else None
+                stats[f'{col}_std'] = float(self.unified_data[col].std()) if pd.notna(self.unified_data[col].std()) else None
 
         return stats
 
