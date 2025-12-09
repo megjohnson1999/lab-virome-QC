@@ -22,6 +22,7 @@ import sys
 from typing import Dict, List, Tuple, Optional, Any
 import warnings
 from datetime import datetime
+import base64
 
 # HTML template generation
 try:
@@ -419,9 +420,40 @@ class ViromeQCReportGenerator:
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
 
+    def encode_images_as_base64(self, output_dir: str) -> Dict[str, str]:
+        """
+        Convert PNG images to base64 data URLs for embedding in HTML
+        """
+        image_files = {
+            'contamination_bars': 'contamination_bars.png',
+            'contamination_heatmap': 'contamination_heatmap.png',
+            'primer_b_heatmap': 'primer_b_heatmap.png'
+        }
+
+        base64_images = {}
+
+        for key, filename in image_files.items():
+            image_path = Path(output_dir) / filename
+
+            if image_path.exists():
+                try:
+                    with open(image_path, 'rb') as img_file:
+                        img_data = img_file.read()
+                        img_base64 = base64.b64encode(img_data).decode('utf-8')
+                        base64_images[key] = f"data:image/png;base64,{img_base64}"
+                        print(f"Encoded {filename} as base64 ({len(img_data)} bytes)")
+                except Exception as e:
+                    print(f"Warning: Could not encode {filename} as base64: {e}")
+                    base64_images[key] = None
+            else:
+                print(f"Warning: Image file not found: {image_path}")
+                base64_images[key] = None
+
+        return base64_images
+
     def generate_html_report(self, template_dir: str, output_file: str) -> bool:
         """
-        Generate HTML report using Jinja2 template
+        Generate HTML report using Jinja2 template with embedded images
         """
         if not JINJA2_AVAILABLE:
             print("Skipping HTML generation - jinja2 not available")
@@ -435,13 +467,18 @@ class ViromeQCReportGenerator:
             # Generate report data
             report_data = self.generate_json_data()
 
+            # Encode images as base64 for embedding
+            output_dir = Path(output_file).parent
+            base64_images = self.encode_images_as_base64(str(output_dir))
+
             # Render template
             html_content = template.render(
                 batch_statistics=report_data['batch_statistics'],
                 samples=report_data['samples'],
                 config=report_data['config'],
                 timestamp=report_data['timestamp'],
-                report_data=report_data  # Full data for JavaScript
+                report_data=report_data,  # Full data for JavaScript
+                base64_images=base64_images  # Base64-encoded images
             )
 
             # Write HTML file

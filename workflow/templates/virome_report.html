@@ -455,7 +455,11 @@
                             <h5>Contamination Levels by Sample</h5>
                         </div>
                         <div class="card-body">
-                            <img src="contamination_bars.png" alt="Contamination Bar Chart" class="img-fluid">
+                            {% if base64_images.contamination_bars %}
+                            <img src="{{ base64_images.contamination_bars }}" alt="Contamination Bar Chart" class="img-fluid">
+                            {% else %}
+                            <div class="text-center text-muted p-4">Contamination bar chart not available</div>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
@@ -469,7 +473,11 @@
                             <h5>Contamination Heatmap</h5>
                         </div>
                         <div class="card-body">
-                            <img src="contamination_heatmap.png" alt="Contamination Heatmap" class="img-fluid">
+                            {% if base64_images.contamination_heatmap %}
+                            <img src="{{ base64_images.contamination_heatmap }}" alt="Contamination Heatmap" class="img-fluid">
+                            {% else %}
+                            <div class="text-center text-muted p-4">Contamination heatmap not available</div>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
@@ -487,7 +495,11 @@
                             </small>
                         </div>
                         <div class="card-body">
-                            <img src="primer_b_heatmap.png" alt="Primer B Heatmap" class="img-fluid">
+                            {% if base64_images.primer_b_heatmap %}
+                            <img src="{{ base64_images.primer_b_heatmap }}" alt="Primer B Heatmap" class="img-fluid">
+                            {% else %}
+                            <div class="text-center text-muted p-4">Primer B heatmap not available</div>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
