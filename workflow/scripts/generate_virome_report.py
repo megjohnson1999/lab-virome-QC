@@ -386,9 +386,13 @@ class ViromeQCReportGenerator:
             host_removal = ((self.unified_data['fastp'] - self.unified_data['host_depleted']) / self.unified_data['fastp'] * 100)
             stats['median_host_removal_pct'] = round(float(host_removal.median()), 1)
 
-        if 'host_depleted' in self.unified_data.columns and 'rrna_removed' in self.unified_data.columns:
-            rrna_removal = ((self.unified_data['host_depleted'] - self.unified_data['rrna_removed']) / self.unified_data['host_depleted'] * 100)
-            stats['median_rrna_removal_pct'] = round(float(rrna_removal.median()), 1)
+        # Use pre-calculated rrna_percent from QC flags for consistency with plot
+        if 'rrna_percent' in self.unified_data.columns:
+            # Filter out non-numeric values
+            rrna_values = self.unified_data['rrna_percent']
+            rrna_numeric = rrna_values[rrna_values != 'NA'].astype(float)
+            if len(rrna_numeric) > 0:
+                stats['median_rrna_removal_pct'] = round(float(rrna_numeric.median()), 1)
 
         if 'raw' in self.unified_data.columns and 'clean' in self.unified_data.columns:
             total_loss = ((self.unified_data['raw'] - self.unified_data['clean']) / self.unified_data['raw'] * 100)
