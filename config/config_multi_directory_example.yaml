@@ -1,7 +1,8 @@
 # =============================================================================
-# Lab Virome QC Pipeline Configuration - Auto Sample Detection Example
+# Lab Virome QC Pipeline Configuration - Multi-Directory Example
 # =============================================================================
-# This configuration demonstrates automatic sample detection from a directory
+# This configuration demonstrates automatic sample detection from MULTIPLE directories
+# Useful when your samples are spread across different locations
 
 # Output directory
 output_dir: "results"
@@ -28,49 +29,33 @@ references:
 # Sample information - not used when auto-detection is enabled
 samples: {}
 
-# Auto sample detection (ENABLED)
-# Automatically finds all paired-end samples in a directory
+# Multi-directory auto sample detection (NEW FEATURE!)
+# Automatically finds all paired-end samples from MULTIPLE directories
 sample_auto_detection:
   enabled: true
 
-  # Directory containing your fastq.gz files
-  input_dir: "data/raw"
+  # Multiple directories containing your fastq.gz files
+  # Can be relative paths, absolute paths, or a mix of both
+  input_dirs:
+    - "data/raw"                          # Relative path
+    - "data/additional_samples"           # Another relative path
+    - "/path/to/external/samples"         # Absolute path
+    - "data/pilot_study"                  # Yet another directory
 
   # Glob patterns for paired-end reads
   # The '*' wildcard will match the sample name
-  # Adjust these patterns to match your file naming convention
   r1_pattern: "*_R1.fastq.gz"
   r2_pattern: "*_R2.fastq.gz"
 
-  # Common alternative patterns:
-  # For Illumina default naming:
-  #   r1_pattern: "*_R1_001.fastq.gz"
-  #   r2_pattern: "*_R2_001.fastq.gz"
-  #
-  # For short form:
-  #   r1_pattern: "*_1.fq.gz"
-  #   r2_pattern: "*_2.fq.gz"
-  #
-  # For dot separator:
-  #   r1_pattern: "*.R1.fastq.gz"
-  #   r2_pattern: "*.R2.fastq.gz"
+  # Conflict resolution strategy for duplicate sample names
+  # Options:
+  #   "error"     - Stop with error if duplicates found (default)
+  #   "prefix_dir" - Add directory name prefix (e.g., "dir1_sample1", "dir2_sample1")
+  #   "newest"    - Use sample from most recently modified directory
+  conflict_resolution: "prefix_dir"
 
-  # NEW FEATURES (see additional example configs):
-  #
-  # Multi-directory support:
-  #   Use 'input_dirs' instead of 'input_dir' for multiple directories
-  #   Example: input_dirs: ["data/raw", "data/additional", "/path/to/external"]
-  #   See config_multi_directory_example.yaml
-  #
-  # Recursive scanning:
-  #   Set recursive: true to scan subdirectories
-  #   Example: input_dir: "data", recursive: true
-  #   See config_recursive_example.yaml
-  #
-  # Conflict resolution (for duplicate sample names across directories):
-  #   conflict_resolution: "error"      # Stop with error (default)
-  #   conflict_resolution: "prefix_dir" # Add directory name prefix
-  #   conflict_resolution: "newest"     # Use most recent file
+  # NOTE: Cannot use both 'input_dir' and 'input_dirs' - choose one!
+  # For single directory, use the original 'input_dir' configuration
 
 # QC thresholds for flagging problematic samples
 qc_thresholds:

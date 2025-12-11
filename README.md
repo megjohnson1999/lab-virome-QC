@@ -163,10 +163,11 @@ See `resources/README.md`
 
 You have three options for specifying samples:
 
-**Option A: Auto-detect samples from a directory (recommended for many samples)**
+**Option A: Auto-detect samples from directories (recommended for many samples)**
 
-Enable auto-detection in `config/config.yaml`:
+The pipeline supports flexible auto-detection with three modes:
 
+**A1. Single directory (simple case)**
 ```yaml
 sample_auto_detection:
   enabled: true
@@ -175,13 +176,46 @@ sample_auto_detection:
   r2_pattern: "*_R2.fastq.gz"        # Pattern for R2 files
 ```
 
-The pipeline will automatically find all paired-end samples matching the pattern. Common patterns:
+**A2. Multiple directories (files spread across locations) - NEW!**
+```yaml
+sample_auto_detection:
+  enabled: true
+  input_dirs:                        # Multiple directories
+    - "data/raw"
+    - "data/additional_samples"
+    - "/path/to/external/data"
+  r1_pattern: "*_R1.fastq.gz"
+  r2_pattern: "*_R2.fastq.gz"
+  conflict_resolution: "prefix_dir"  # Handle duplicate sample names
+```
+
+**A3. Recursive scanning (files in subdirectories) - NEW!**
+```yaml
+sample_auto_detection:
+  enabled: true
+  input_dir: "data"                  # Root directory to scan
+  recursive: true                    # Scan all subdirectories
+  max_depth: 3                       # Optional: limit recursion depth
+  r1_pattern: "*_R1.fastq.gz"
+  r2_pattern: "*_R2.fastq.gz"
+  conflict_resolution: "prefix_dir"  # Recommended for recursive mode
+```
+
+**Conflict resolution strategies** (for duplicate sample names):
+- `"error"` - Stop with error if duplicates found (default)
+- `"prefix_dir"` - Add directory name prefix (e.g., `dir1_sample1`, `dir2_sample1`)
+- `"newest"` - Use sample from most recently modified directory
+
+Common file naming patterns:
 - `*_R1.fastq.gz` / `*_R2.fastq.gz` (default)
 - `*_R1_001.fastq.gz` / `*_R2_001.fastq.gz` (Illumina default naming)
 - `*_1.fq.gz` / `*_2.fq.gz` (short form)
 - `*.R1.fastq.gz` / `*.R2.fastq.gz` (dot separator)
 
-See `config/config_auto_detect_example.yaml` for a complete example.
+**Example configurations:**
+- Single directory: `config/config_auto_detect_example.yaml`
+- Multiple directories: `config/config_multi_directory_example.yaml`
+- Recursive scanning: `config/config_recursive_example.yaml`
 
 **Option B: Edit config.yaml directly**
 ```yaml
