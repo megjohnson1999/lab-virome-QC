@@ -89,12 +89,50 @@ samples:
     r2: "data/raw/sample2_R2.fastq.gz"
 
 # Auto sample detection (optional)
-# If enabled, automatically finds all paired-end samples in a directory
+# If enabled, automatically finds all paired-end samples in directories
 # This overrides the manual 'samples' section above
 sample_auto_detection:
   enabled: false
+
+  # ==========================================================================
+  # BASIC MODE: Single directory (most common)
+  # ==========================================================================
   # Directory containing fastq.gz files
   input_dir: "data/raw"
+
+  # ==========================================================================
+  # ADVANCED MODES: Multiple directories or recursive scanning
+  # ==========================================================================
+  #
+  # Option 1: Multiple directories (files spread across locations)
+  # Use 'input_dirs' instead of 'input_dir' for multiple directories:
+  #
+  # input_dirs:
+  #   - "data/raw"
+  #   - "data/additional_samples"
+  #   - "/path/to/external/samples"
+  #
+  # Option 2: Recursive scanning (files in subdirectories)
+  # Use 'recursive: true' with 'input_dir':
+  #
+  # input_dir: "data"
+  # recursive: true
+  # max_depth: 3  # Optional: limit recursion depth
+  #
+  # Option 3: Both multiple directories AND recursive scanning
+  # Use 'input_dirs' with 'recursive: true':
+  #
+  # input_dirs: ["data/run1", "data/run2"]
+  # recursive: true
+  #
+  # See example configs:
+  #   - config_multi_directory_example.yaml (multiple directories)
+  #   - config_recursive_example.yaml (recursive scanning)
+  #   - config_auto_detect_example.yaml (basic usage)
+
+  # ==========================================================================
+  # FILE NAMING PATTERNS
+  # ==========================================================================
   # Glob patterns for paired-end reads
   # The '*' will be replaced with the sample name
   # Common patterns:
@@ -104,6 +142,16 @@ sample_auto_detection:
   #   - *.R1.fastq.gz / *.R2.fastq.gz (dot separator)
   r1_pattern: "*_R1.fastq.gz"
   r2_pattern: "*_R2.fastq.gz"
+
+  # ==========================================================================
+  # CONFLICT RESOLUTION (for multiple directories or recursive scanning)
+  # ==========================================================================
+  # How to handle duplicate sample names across directories:
+  #   "error"      - Stop with error if duplicates found (default, safest)
+  #   "prefix_dir" - Add directory name prefix (e.g., "dir1_sample1", "dir2_sample1")
+  #   "newest"     - Use sample from most recently modified directory
+  #
+  # conflict_resolution: "error"  # Uncomment if using advanced modes
 
 # Primer B removal and cross-contamination detection
 primer_b:
