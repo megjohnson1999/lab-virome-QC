@@ -104,6 +104,14 @@ sample_auto_detection:
   # ADVANCED MODES: Multiple directories or recursive scanning
   # ==========================================================================
   #
+  # IMPORTANT: When using a custom config file (--configfile path/to/your/config.yaml)
+  # with advanced modes, you MUST set input_dir: null to override the base config:
+  #
+  # sample_auto_detection:
+  #   enabled: true
+  #   input_dir: null        # ← Required! Overrides base config
+  #   input_dirs: [...]      # ← Your directories
+  #
   # Option 1: Multiple directories (files spread across locations)
   # Use 'input_dirs' instead of 'input_dir' for multiple directories:
   #
