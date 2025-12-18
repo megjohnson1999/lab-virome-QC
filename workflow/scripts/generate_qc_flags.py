@@ -97,9 +97,18 @@ def main():
                 flags['pass_host'] = 'FAIL'
                 flags['notes'].append(f'High_host({host_pct:.1f}%)')
 
-            # Calculate % rRNA removed
-            rrna_removed = host_depleted - clean_count
-            rrna_pct = (rrna_removed / host_depleted) * 100 if host_depleted > 0 else 0
+            # Calculate % pure rRNA contamination (biological contamination only)
+            # Use the actual rrna_removed step count rather than combined processing losses
+            rrna_removed_step = sample_reads[sample_reads['step'] == 'rrna_removed']['reads']
+            if len(rrna_removed_step) > 0:
+                rrna_removed_count = rrna_removed_step.values[0]
+                # Pure rRNA contamination: reads lost during rRNA removal step only
+                rrna_contamination = host_depleted - rrna_removed_count
+                rrna_pct = (rrna_contamination / host_depleted) * 100 if host_depleted > 0 else 0
+            else:
+                # Fallback to old method if rrna_removed step not found
+                rrna_contamination = host_depleted - clean_count
+                rrna_pct = (rrna_contamination / host_depleted) * 100 if host_depleted > 0 else 0
             flags['rrna_percent'] = rrna_pct
 
             if rrna_pct <= max_rrna_pct:

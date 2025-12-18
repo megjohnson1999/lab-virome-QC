@@ -602,7 +602,7 @@
                 const histData = [{
                     x: contaminationData,
                     type: 'histogram',
-                    nbinsx: 15,
+                    nbinsx: 50,
                     marker: {
                         color: '#5B9BD5',  // Steel blue color matching rRNA
                         line: { color: '#2F5F8F', width: 1 }
@@ -682,7 +682,7 @@
                 const rrnaHistData = [{
                     x: rrnaData,
                     type: 'histogram',
-                    nbinsx: 15,
+                    nbinsx: 50,
                     marker: {
                         color: '#5B9BD5',  // Steel blue color
                         line: { color: '#2F5F8F', width: 1 }
@@ -717,11 +717,11 @@
 
                 const rrnaHistLayout = {
                     title: {
-                        text: `rRNA Contamination Distribution (n=${rrnaData.length})<br><sub>SILVA 138.1 SSU+LSU Database</sub>`,
+                        text: `Pure rRNA Contamination Distribution (n=${rrnaData.length})<br><sub>Biological rRNA contamination only (excludes PCR deduplication losses)<br>SILVA 138.1 SSU+LSU Database</sub>`,
                         font: { size: 16, family: 'Arial, sans-serif' }
                     },
                     xaxis: {
-                        title: 'rRNA Contamination (%)',
+                        title: 'Pure rRNA Contamination (%)',
                         range: [0, 100],
                         dtick: 20,
                         gridcolor: '#E5E5E5'
