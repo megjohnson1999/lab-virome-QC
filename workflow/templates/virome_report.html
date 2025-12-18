@@ -600,7 +600,7 @@
                 const histData = [{
                     x: contaminationData,
                     type: 'histogram',
-                    nbinsx: 50,
+                    nbinsx: Math.max(8, Math.min(50, Math.ceil(Math.sqrt(contaminationData.length)))),
                     marker: {
                         color: '#5B9BD5',  // Steel blue color matching rRNA
                         line: { color: '#2F5F8F', width: 1 }
@@ -680,7 +680,7 @@
                 const rrnaHistData = [{
                     x: rrnaData,
                     type: 'histogram',
-                    nbinsx: 50,
+                    nbinsx: Math.max(8, Math.min(50, Math.ceil(Math.sqrt(rrnaData.length)))),
                     marker: {
                         color: '#5B9BD5',  // Steel blue color
                         line: { color: '#2F5F8F', width: 1 }
