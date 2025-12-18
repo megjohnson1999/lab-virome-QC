@@ -125,8 +125,6 @@ def get_final_outputs():
     # Include QC outputs if starting from raw reads
     if START_FROM == "raw_reads":
         outputs.extend([
-            # Final QC report
-            f"{OUTDIR}/multiqc/multiqc_report.html",
             # Read count tracking
             f"{OUTDIR}/reports/read_counts.tsv",
             # Sample QC flags
