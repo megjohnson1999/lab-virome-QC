@@ -2,41 +2,29 @@
 """
 Generate QC pass/fail flags for virome samples
 
-Evaluates samples based on:
-- ViromeQC enrichment score
-- % host reads
-- % rRNA reads
-- Final read count after QC
-- Duplication rate
+Evaluates samples based on 3 essential quality metrics:
+- % host reads (VLP prep efficiency)
+- % rRNA reads (biological contamination)
+- Final read count after QC (sequencing depth)
+
+Note: ViromeQC enrichment scoring removed as redundant with direct contamination measurements
 """
 
 import pandas as pd
 import sys
 from pathlib import Path
 
-def parse_viromeqc(viromeqc_file):
-    """Parse ViromeQC output to extract enrichment score"""
-    enrichment_score = None
-    with open(viromeqc_file) as f:
-        for line in f:
-            if "Enrichment score" in line or "enrichment" in line.lower():
-                parts = line.strip().split()
-                try:
-                    enrichment_score = float(parts[-1])
-                except (ValueError, IndexError):
-                    pass
-    return enrichment_score
+# ViromeQC parsing function removed - enrichment scoring no longer used
+# Quality assessment now relies on direct contamination measurements
 
 def main():
     # Get inputs from snakemake
-    viromeqc_files = snakemake.input.viromeqc
     read_counts_file = snakemake.input.read_counts
     output_file = snakemake.output[0]
 
-    # Load thresholds from config
+    # Load simplified thresholds from config (3 metrics only)
     config = snakemake.config
     thresholds = config.get('qc_thresholds', {})
-    min_enrichment = thresholds.get('min_enrichment_score', 10)
     max_host_pct = thresholds.get('max_host_percent', 10)
     max_rrna_pct = thresholds.get('max_rrna_percent', 20)
     min_final = thresholds.get('min_final_reads', 100000)
@@ -51,10 +39,9 @@ def main():
     samples = read_df['sample'].unique()
 
     for sample in samples:
+        # Simplified flags structure - 3 quality metrics only
         flags = {
             'sample': sample,
-            'enrichment_score': 'NA',
-            'pass_enrichment': 'UNKNOWN',
             'host_percent': 'NA',
             'pass_host': 'UNKNOWN',
             'rrna_percent': 'NA',
@@ -63,18 +50,6 @@ def main():
             'overall_pass': 'UNKNOWN',
             'notes': []
         }
-
-        # Parse ViromeQC enrichment score
-        vqc_file = [f for f in viromeqc_files if sample in f][0]
-        enrichment = parse_viromeqc(vqc_file)
-
-        if enrichment is not None:
-            flags['enrichment_score'] = enrichment
-            if enrichment >= min_enrichment:
-                flags['pass_enrichment'] = 'PASS'
-            else:
-                flags['pass_enrichment'] = 'FAIL'
-                flags['notes'].append(f'Low_enrichment({enrichment:.2f})')
 
         # Calculate % reads retained at each step
         sample_reads = read_df[read_df['sample'] == sample]
@@ -124,9 +99,8 @@ def main():
                 flags['pass_final_count'] = 'FAIL'
                 flags['notes'].append(f'Low_final_reads({int(clean_count)})')
 
-        # Overall pass/fail
+        # Overall pass/fail - simplified to 3 essential metrics
         all_checks = [
-            flags['pass_enrichment'],
             flags['pass_host'],
             flags['pass_rrna'],
             flags['pass_final_count']
@@ -148,8 +122,13 @@ def main():
 
     # Print summary
     print("\n" + "="*60)
-    print("QC FLAGS SUMMARY")
+    print("SIMPLIFIED QC FLAGS SUMMARY (3 Essential Metrics)")
     print("="*60)
+    print(f"Samples evaluated: {len(results_df)}")
+    print(f"PASS: {len(results_df[results_df['overall_pass'] == 'PASS'])}")
+    print(f"FAIL: {len(results_df[results_df['overall_pass'] == 'FAIL'])}")
+    print(f"WARNING: {len(results_df[results_df['overall_pass'] == 'WARNING'])}")
+    print("")
     print(results_df.to_string(index=False))
     print("="*60 + "\n")
 

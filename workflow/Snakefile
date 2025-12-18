@@ -127,8 +127,6 @@ def get_final_outputs():
         outputs.extend([
             # Final QC report
             f"{OUTDIR}/multiqc/multiqc_report.html",
-            # ViromeQC results
-            expand(f"{OUTDIR}/viromeqc/{{sample}}_viromeqc.txt", sample=SAMPLES),
             # Read count tracking
             f"{OUTDIR}/reports/read_counts.tsv",
             # Sample QC flags
@@ -204,8 +202,6 @@ def get_qc_outputs():
     # Only include QC outputs when performing QC (starting from raw reads)
     if START_FROM == "raw_reads":
         outputs.extend([
-            # ViromeQC results
-            expand(f"{OUTDIR}/viromeqc/{{sample}}_viromeqc.txt", sample=SAMPLES),
             # Read count tracking
             f"{OUTDIR}/reports/read_counts.tsv",
             # Sample QC flags

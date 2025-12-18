@@ -372,11 +372,10 @@
                             <th>Total Reads</th>
                             <th>Final Reads</th>
                             <th>Read Retention %</th>
-                            <th>Enrichment</th>
-                            <th>PhiX %</th>
-                            <th>Vector %</th>
                             <th>Host %</th>
                             <th>rRNA %</th>
+                            <th>PhiX %</th>
+                            <th>Vector %</th>
                             <th>Notes</th>
                         </tr>
                     </thead>
@@ -406,11 +405,10 @@
                                 {% endif %}
                             </td>
                             <td>{{ "%.1f"|format(sample.clean_retention) if sample.clean_retention else 'N/A' }}</td>
-                            <td>{{ "%.1f"|format(sample.enrichment_score) if sample.enrichment_score else 'N/A' }}</td>
+                            <td>{{ "%.2f"|format(sample.host_percent) if sample.host_percent is defined and sample.host_percent != 'NA' else 'N/A' }}</td>
+                            <td>{{ "%.1f"|format(sample.rrna_percent) if sample.rrna_percent is defined and sample.rrna_percent != 'NA' else 'N/A' }}</td>
                             <td>{{ "%.3f"|format(sample.phix_percent) if sample.phix_percent is defined else 'N/A' }}</td>
                             <td>{{ "%.3f"|format(sample.vector_percent) if sample.vector_percent is defined else 'N/A' }}</td>
-                            <td>{{ "%.1f"|format(sample.host_percent) if sample.host_percent is defined and sample.host_percent != 'NA' else 'N/A' }}</td>
-                            <td>{{ "%.1f"|format(sample.rrna_percent) if sample.rrna_percent is defined and sample.rrna_percent != 'NA' else 'N/A' }}</td>
                             <td>{{ sample.notes if sample.notes != 'None' else '' }}</td>
                         </tr>
                         {% endfor %}
@@ -795,8 +793,8 @@
                         <div class="col-md-6">
                             <h6 class="text-primary">Quality Metrics</h6>
                             <strong>Quality Score:</strong> ${sample.quality_score ? sample.quality_score.toFixed(1) : 'N/A'}<br>
-                            <strong>Enrichment Score:</strong> ${sample.enrichment_score ? sample.enrichment_score.toFixed(1) : 'N/A'}<br>
                             <strong>Read Retention:</strong> ${sample.clean_retention ? sample.clean_retention.toFixed(1) + '%' : 'N/A'}<br>
+                            <strong>Host Contamination:</strong> ${sample.host_percent !== undefined && sample.host_percent !== 'NA' ? sample.host_percent.toFixed(2) + '%' : 'N/A'}<br>
                             <br>
                             <h6 class="text-success">Read Counts</h6>
                             <strong>Raw Reads:</strong> ${formatNumber(sample.raw)}<br>
@@ -851,8 +849,9 @@
                     <p>Samples are flagged as outliers based on unusual values in any of these metrics:</p>
                     <ul>
                         <li><strong>Quality Score:</strong> Overall sample quality assessment</li>
-                        <li><strong>Enrichment Score:</strong> Viral enrichment effectiveness</li>
                         <li><strong>Read Retention:</strong> Percentage of reads surviving quality control</li>
+                        <li><strong>Host Contamination:</strong> Percentage of host reads (VLP prep efficiency)</li>
+                        <li><strong>rRNA Contamination:</strong> Percentage of rRNA reads (biological contamination)</li>
                         <li><strong>Contamination Levels:</strong> PhiX, vector, host, and rRNA contamination</li>
                     </ul>
 
@@ -863,8 +862,8 @@
                             <ul>
                                 <li>Library preparation problems</li>
                                 <li>Sequencing quality issues</li>
-                                <li>Sample contamination</li>
-                                <li>Poor viral enrichment</li>
+                                <li>Sample contamination (host, rRNA, PhiX, vector)</li>
+                                <li>VLP preparation efficiency issues</li>
                             </ul>
                         </div>
                         <div class="col-md-6">

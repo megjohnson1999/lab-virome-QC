@@ -171,11 +171,11 @@ primer_b:
   bbduk_forward: {ktrim: "l", k: 16, mink: 9, rcomp: "f", ordered: "t", ow: "t"}
   bbduk_rc: {ktrim: "r", k: 16, mink: 9, rcomp: "f", ordered: "t", ow: "t"}
 
-# QC thresholds for flagging problematic samples
+# Simplified QC thresholds - 3 essential metrics only
+# ViromeQC enrichment scoring removed as redundant with contamination measurements
 qc_thresholds:
-  min_enrichment_score: 10      # ViromeQC enrichment score
-  max_host_percent: 10          # Maximum % host reads (VLP failure if exceeded)
-  max_rrna_percent: 20          # Maximum % rRNA after removal
+  max_host_percent: 10          # Maximum % host reads (VLP prep efficiency)
+  max_rrna_percent: 20          # Maximum % rRNA contamination (biological contamination)
   min_final_reads: 100000       # Minimum reads after all QC
   max_duplication_rate: 80      # Maximum % duplication
 

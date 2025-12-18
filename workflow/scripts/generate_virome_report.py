@@ -226,7 +226,7 @@ class ViromeQCReportGenerator:
         contamination = self.loader.load_contamination_data(self.inputs['contamination_summary'])
         qc_flags = self.loader.load_qc_flags(self.inputs['qc_flags'])
         primer_b = self.loader.load_primer_b_data(self.inputs['primer_b_summary'])
-        viromeqc = self.loader.load_viromeqc_data(self.inputs['viromeqc_files'])
+        # ViromeQC data loading removed - enrichment scoring no longer used
 
         # Start with QC flags as the base (has all samples)
         unified = qc_flags.set_index('sample')
@@ -243,37 +243,11 @@ class ViromeQCReportGenerator:
             primer_b_indexed = primer_b.set_index('sample')
             unified = unified.join(primer_b_indexed, how='left', rsuffix='_pb')
 
-        if not viromeqc.empty:
-            viromeqc_indexed = viromeqc.set_index('sample')
-            unified = unified.join(viromeqc_indexed, how='left', rsuffix='_vqc')
-
         # Reset index to have sample as column
         unified = unified.reset_index()
 
-        # Fix ViromeQC data priority: use correctly parsed scores over QC flags
-        if not viromeqc.empty and 'enrichment_score_vqc' in unified.columns:
-            # Replace QC flags enrichment scores with correctly parsed ones
-            unified['enrichment_score'] = unified['enrichment_score_vqc'].fillna(unified['enrichment_score'])
-
-            # Recalculate enrichment pass/fail based on corrected scores
-            if 'min_enrichment_score' in self.config.get('qc_thresholds', {}):
-                min_enrichment = self.config['qc_thresholds']['min_enrichment_score']
-
-                # Update pass_enrichment based on corrected scores
-                unified.loc[unified['enrichment_score'].notna(), 'pass_enrichment'] = \
-                    unified.loc[unified['enrichment_score'].notna(), 'enrichment_score'].apply(
-                        lambda x: 'PASS' if x >= min_enrichment else 'FAIL'
-                    )
-
-                # Recalculate overall pass status
-                for idx, row in unified.iterrows():
-                    checks = [row['pass_enrichment'], row['pass_host'], row['pass_rrna'], row['pass_final_count']]
-                    if 'FAIL' in checks:
-                        unified.at[idx, 'overall_pass'] = 'FAIL'
-                    elif 'UNKNOWN' in checks:
-                        unified.at[idx, 'overall_pass'] = 'WARNING'
-                    else:
-                        unified.at[idx, 'overall_pass'] = 'PASS'
+        # ViromeQC enrichment score correction logic removed - no longer needed
+        # QC flags now use simplified 3-metric system
 
         self.unified_data = unified
         print(f"Successfully loaded data for {len(unified)} samples")
@@ -283,13 +257,14 @@ class ViromeQCReportGenerator:
         if self.unified_data is None:
             raise ValueError("Must load data first")
 
-        # Define quality metrics and their weights
+        # Define quality metrics and their weights (simplified to essential metrics)
+        # ViromeQC enrichment_score removed as redundant with contamination measurements
         quality_metrics = {
-            'enrichment_score': 0.3,  # ViromeQC enrichment (higher = better)
-            'clean_retention': 0.25,   # Final read retention (higher = better)
-            'phix_percent': -0.2,      # PhiX contamination (lower = better)
-            'vector_percent': -0.15,   # Vector contamination (lower = better)
-            'total_contamination_percent': -0.1  # Total contamination (lower = better)
+            'clean_retention': 0.40,        # Final read retention (higher = better) - increased weight
+            'host_percent': -0.30,          # Host contamination (lower = better) - new metric
+            'rrna_percent': -0.20,          # rRNA contamination (lower = better) - new metric
+            'phix_percent': -0.05,          # PhiX contamination (lower = better) - reduced weight
+            'vector_percent': -0.05,        # Vector contamination (lower = better) - reduced weight
         }
 
         # Normalize metrics to 0-1 scale
@@ -303,14 +278,18 @@ class ViromeQCReportGenerator:
                 if metric in row and pd.notna(row[metric]):
                     value = row[metric]
 
-                    if metric == 'enrichment_score':
-                        # Normalize enrichment score (cap at 50 for normalization)
-                        normalized = min(value, 50) / 50
-                    elif metric.endswith('_retention'):
+                    if metric.endswith('_retention'):
                         # Retention percentage (already 0-100)
                         normalized = value / 100
+                    elif metric in ['host_percent', 'rrna_percent']:
+                        # Major contamination metrics (invert since lower is better)
+                        # Use realistic caps: host 50%, rRNA 90%
+                        if metric == 'host_percent':
+                            normalized = max(0, 1 - min(value, 50) / 50)
+                        else:  # rrna_percent
+                            normalized = max(0, 1 - min(value, 90) / 90)
                     elif metric.endswith('_percent'):
-                        # Contamination percentage (invert since lower is better)
+                        # Minor contamination metrics (PhiX, vector)
                         # Cap at 10% for normalization
                         normalized = max(0, 1 - min(value, 10) / 10)
                     else:
@@ -335,11 +314,11 @@ class ViromeQCReportGenerator:
     def detect_all_outliers(self):
         """Detect outliers across all quality metrics"""
         outlier_columns = [
-            'enrichment_score',
             'clean_retention',
+            'host_percent',
+            'rrna_percent',
             'phix_percent',
             'vector_percent',
-            'total_contamination_percent',
             'quality_score'
         ]
 
@@ -399,7 +378,7 @@ class ViromeQCReportGenerator:
             stats['median_total_loss_pct'] = round(float(total_loss.median()), 1)
 
         # Calculate median values for key metrics (convert to native Python types for JSON serialization)
-        numeric_cols = ['enrichment_score', 'clean_retention', 'phix_percent',
+        numeric_cols = ['clean_retention', 'host_percent', 'rrna_percent', 'phix_percent',
                        'vector_percent', 'quality_score']
 
         for col in numeric_cols:
@@ -559,7 +538,6 @@ def main():
         'contamination_summary': snakemake.input.contamination_summary,
         'qc_flags': snakemake.input.qc_flags,
         'primer_b_summary': snakemake.input.primer_b_summary,
-        'viromeqc_files': snakemake.input.viromeqc_files,
         'fastqc_files': snakemake.input.get('fastqc_files', [])
     }
 

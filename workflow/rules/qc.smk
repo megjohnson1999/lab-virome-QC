@@ -465,45 +465,9 @@ rule remove_pcr_duplicates:
         grep -E "^(Input|Duplicates|Result)" {log} > {output.stats} || true
         """
 
-rule viromeqc:
-    """
-    ViromeQC: THE critical QC metric for VLP-enriched viromes
-
-    Calculates enrichment score based on:
-    - SSU rRNA gene abundance
-    - LSU rRNA gene abundance
-    - 31 prokaryotic single-copy marker genes
-
-    Low enrichment score = VLP prep failure or excessive bacterial contamination
-
-    IMPORTANT: Runs on host_depleted reads (BEFORE rRNA removal) to get accurate
-    enrichment scores. Running after rRNA removal would artificially inflate the
-    enrichment score since rRNA has already been removed.
-
-    Note: Runs bowtie2 and diamond alignments which require memory for large samples
-          Allocated 16GB to handle samples up to ~95M reads
-          Can take several hours for large samples (>10M reads)
-    """
-    input:
-        r1 = f"{OUTDIR}/host_depleted/{{sample}}_R1.fastq.gz",
-        r2 = f"{OUTDIR}/host_depleted/{{sample}}_R2.fastq.gz"
-    output:
-        report = f"{OUTDIR}/viromeqc/{{sample}}_viromeqc.txt"
-    log:
-        f"{OUTDIR}/logs/viromeqc/{{sample}}.log"
-    threads: 4
-    resources:
-        mem_mb = 16000,
-        time_min = 360
-    conda:
-        "../envs/viromeqc.yaml"
-    shell:
-        """
-        viromeQC.py \
-            -i {input.r1} {input.r2} \
-            -o {output.report} \
-            2>&1 | tee {log}
-        """
+# ViromeQC rule removed - enrichment scoring was redundant with host/rRNA contamination metrics
+# This removes the most computationally expensive QC step (16GB memory, 6-hour runtime)
+# Quality assessment now relies on directly measurable metrics: host_percent, rrna_percent, final_reads
 
 rule final_fastqc:
     """
@@ -712,7 +676,6 @@ rule qc_flags:
     - Final read count
     """
     input:
-        viromeqc = expand(f"{OUTDIR}/viromeqc/{{sample}}_viromeqc.txt", sample=SAMPLES),
         read_counts = f"{OUTDIR}/reports/read_counts.tsv"
     output:
         f"{OUTDIR}/reports/sample_qc_flags.tsv"
@@ -734,8 +697,6 @@ rule multiqc:
         expand(f"{OUTDIR}/fastqc/final/{{sample}}_R1_fastqc.zip", sample=SAMPLES),
         # fastp reports
         expand(f"{OUTDIR}/fastp/{{sample}}_fastp.json", sample=SAMPLES),
-        # ViromeQC
-        expand(f"{OUTDIR}/viromeqc/{{sample}}_viromeqc.txt", sample=SAMPLES),
         # Read counts
         f"{OUTDIR}/reports/read_counts.tsv",
         # QC flags
@@ -772,7 +733,6 @@ rule virome_report:
         contamination_summary=f"{OUTDIR}/reports/contamination_summary.tsv",
         qc_flags=f"{OUTDIR}/reports/sample_qc_flags.tsv",
         primer_b_summary=f"{OUTDIR}/reports/primer_b_contamination_summary.tsv",
-        viromeqc_files=expand(f"{OUTDIR}/viromeqc/{{sample}}_viromeqc.txt", sample=SAMPLES),
         # Plot files for report
         contamination_plots=[
             f"{OUTDIR}/reports/contamination_bars.png",
