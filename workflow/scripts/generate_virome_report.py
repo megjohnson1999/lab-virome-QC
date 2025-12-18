@@ -252,64 +252,19 @@ class ViromeQCReportGenerator:
         self.unified_data = unified
         print(f"Successfully loaded data for {len(unified)} samples")
 
-    def calculate_quality_scores(self):
-        """Calculate composite quality scores for sample ranking"""
+    def rank_samples_by_metrics(self):
+        """Rank samples by final read count (most practical metric for prioritization)"""
         if self.unified_data is None:
             raise ValueError("Must load data first")
 
-        # Define quality metrics and their weights (simplified to essential metrics)
-        # ViromeQC enrichment_score removed as redundant with contamination measurements
-        quality_metrics = {
-            'clean_retention': 0.40,        # Final read retention (higher = better) - increased weight
-            'host_percent': -0.30,          # Host contamination (lower = better) - new metric
-            'rrna_percent': -0.20,          # rRNA contamination (lower = better) - new metric
-            'phix_percent': -0.05,          # PhiX contamination (lower = better) - reduced weight
-            'vector_percent': -0.05,        # Vector contamination (lower = better) - reduced weight
-        }
-
-        # Normalize metrics to 0-1 scale
-        quality_scores = []
-
-        for idx, row in self.unified_data.iterrows():
-            score = 0.0
-            total_weight = 0.0
-
-            for metric, weight in quality_metrics.items():
-                if metric in row and pd.notna(row[metric]):
-                    value = row[metric]
-
-                    if metric.endswith('_retention'):
-                        # Retention percentage (already 0-100)
-                        normalized = value / 100
-                    elif metric in ['host_percent', 'rrna_percent']:
-                        # Major contamination metrics (invert since lower is better)
-                        # Use realistic caps: host 50%, rRNA 90%
-                        if metric == 'host_percent':
-                            normalized = max(0, 1 - min(value, 50) / 50)
-                        else:  # rrna_percent
-                            normalized = max(0, 1 - min(value, 90) / 90)
-                    elif metric.endswith('_percent'):
-                        # Minor contamination metrics (PhiX, vector)
-                        # Cap at 10% for normalization
-                        normalized = max(0, 1 - min(value, 10) / 10)
-                    else:
-                        normalized = value
-
-                    score += weight * normalized
-                    total_weight += abs(weight)
-
-            # Normalize by total weight used
-            if total_weight > 0:
-                quality_scores.append(score / total_weight * 100)  # Convert to 0-100 scale
-            else:
-                quality_scores.append(0)
-
-        self.unified_data['quality_score'] = quality_scores
-
-        # Rank samples by quality score
-        self.unified_data['quality_rank'] = self.unified_data['quality_score'].rank(
-            method='dense', ascending=False
-        ).astype(int)
+        # Rank by final read count - most practical for determining sample usability
+        if 'clean' in self.unified_data.columns:
+            self.unified_data['read_count_rank'] = self.unified_data['clean'].rank(
+                method='dense', ascending=False
+            ).astype(int)
+        else:
+            # Fallback ranking by index if clean reads not available
+            self.unified_data['read_count_rank'] = range(1, len(self.unified_data) + 1)
 
     def detect_all_outliers(self):
         """Detect outliers across all quality metrics"""
@@ -318,8 +273,7 @@ class ViromeQCReportGenerator:
             'host_percent',
             'rrna_percent',
             'phix_percent',
-            'vector_percent',
-            'quality_score'
+            'vector_percent'
         ]
 
         # Filter to columns that exist in the data
@@ -379,7 +333,7 @@ class ViromeQCReportGenerator:
 
         # Calculate median values for key metrics (convert to native Python types for JSON serialization)
         numeric_cols = ['clean_retention', 'host_percent', 'rrna_percent', 'phix_percent',
-                       'vector_percent', 'quality_score']
+                       'vector_percent']
 
         for col in numeric_cols:
             if col in self.unified_data.columns:
@@ -486,8 +440,8 @@ class ViromeQCReportGenerator:
         # Phase 1: Load and unify all data
         self.load_all_data()
 
-        # Phase 2: Calculate quality metrics
-        self.calculate_quality_scores()
+        # Phase 2: Rank samples by practical metrics
+        self.rank_samples_by_metrics()
 
         # Phase 3: Detect outliers
         self.detect_all_outliers()
@@ -525,7 +479,8 @@ class ViromeQCReportGenerator:
         print(f"\nBATCH SUMMARY:")
         print(f"  Total samples: {stats['total_samples']}")
         print(f"  Outliers detected: {stats['outlier_count']}")
-        print(f"  Quality score median: {stats.get('quality_score_median', 'N/A'):.1f}")
+        print(f"  Median host contamination: {stats.get('host_percent_median', 'N/A'):.1f}%")
+        print(f"  Median rRNA contamination: {stats.get('rrna_percent_median', 'N/A'):.1f}%")
 
         print("\n" + "="*60)
         return report_data
