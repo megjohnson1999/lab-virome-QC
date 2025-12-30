@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Virome QC Report</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- DataTables CSS -->
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.bootstrap5.min.css">
+
+    <!-- Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
+
+    <style>
+        .status-pass { color: #28a745; font-weight: bold; }
+        .status-fail { color: #dc3545; font-weight: bold; }
+        .status-warning { color: #ffc107; font-weight: bold; }
+        .status-unknown { color: #6c757d; font-weight: bold; }
+
+        .outlier-highlight {
+            background-color: #fff3cd !important;
+            border-left: 4px solid #856404;
+        }
+
+        .metric-card {
+            border-left: 4px solid #007bff;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        }
+
+        .quality-excellent { border-left-color: #28a745; }
+        .quality-good { border-left-color: #20c997; }
+        .quality-warning { border-left-color: #ffc107; }
+        .quality-poor { border-left-color: #dc3545; }
+
+        .sample-card {
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+
+        .sample-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        .navbar-brand {
+            font-weight: bold;
+            font-size: 1.4rem;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .section-title {
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .filter-buttons {
+            margin-bottom: 1rem;
+        }
+
+        .plotly-container {
+            margin-bottom: 2rem;
+        }
+
+        .batch-alert {
+            border: none;
+            border-radius: 10px;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary sticky-top">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#executive-summary">
+                <i class="bi bi-virus"></i> Virome QC Report
+            </a>
+
+            <div class="navbar-nav">
+                <span class="navbar-text me-3">
+                    Generated: {{ timestamp }}
+                </span>
+                <span class="navbar-text">
+                    <strong>{{ batch_statistics.total_samples }}</strong> samples
+                </span>
+            </div>
+
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="#executive-summary">Summary</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#read-processing">Processing</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#sample-overview">Samples</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#contamination-analysis">Contamination</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+
+        <!-- Executive Summary -->
+        <section id="executive-summary" class="mb-5">
+            <h2 class="section-title">Executive Summary</h2>
+
+            <!-- Batch Alerts -->
+            {% if batch_statistics.outlier_count > batch_statistics.total_samples * 0.2 %}
+            <div class="alert batch-alert alert-warning" role="alert">
+                <h5><i class="bi bi-exclamation-triangle-fill"></i> Many Outliers Detected</h5>
+                <p><strong>{{ batch_statistics.outlier_count }}</strong> of {{ batch_statistics.total_samples }} samples have unusual quality metrics that deviate significantly from the batch median. This high proportion suggests potential batch effects, sequencing issues, or genuine biological variation requiring investigation.</p>
+                <small class="text-muted"><i class="bi bi-lightbulb"></i> <strong>What this means:</strong> Outliers are identified using the IQR statistical method (Q1-1.5×IQR to Q3+1.5×IQR range). Review contamination levels, read quality, and processing efficiency for flagged samples.</small>
+            </div>
+            {% elif batch_statistics.outlier_count > 0 %}
+            <div class="alert batch-alert alert-info" role="alert">
+                <h5><i class="bi bi-info-circle-fill"></i> Outliers Detected</h5>
+                <p><strong>{{ batch_statistics.outlier_count }}</strong> of {{ batch_statistics.total_samples }} samples have quality metrics that deviate from the typical range for this batch. These may indicate samples requiring additional attention or genuine biological differences.</p>
+                <small class="text-muted"><i class="bi bi-lightbulb"></i> <strong>What this means:</strong> Statistical outliers are samples outside the normal distribution (IQR method). Check their contamination levels, quality scores, and read processing metrics in the table below.</small>
+            </div>
+            {% else %}
+            <div class="alert batch-alert alert-success" role="alert">
+                <h5><i class="bi bi-check-circle-fill"></i> Batch Processing Complete</h5>
+                <p>All {{ batch_statistics.total_samples }} samples have quality metrics within the expected statistical range. No outliers detected using IQR analysis.</p>
+                <small class="text-muted"><i class="bi bi-info-circle"></i> <strong>What this means:</strong> All samples have consistent quality scores, contamination levels, and processing efficiency - indicating good batch quality and reproducible results.</small>
+            </div>
+            {% endif %}
+
+            <!-- Low Coverage Alert -->
+            {% if batch_statistics.low_coverage_count and batch_statistics.low_coverage_count > 0 %}
+            <div class="alert batch-alert alert-warning" role="alert">
+                <h5><i class="bi bi-graph-down-arrow"></i> Low Coverage Samples Detected</h5>
+                <p>{{ batch_statistics.low_coverage_count }} samples have fewer than 1M final reads. These samples may have insufficient coverage for reliable virome analysis and could benefit from re-sequencing or pooling with additional samples.</p>
+            </div>
+            {% endif %}
+
+            <!-- Summary Statistics Grid -->
+            <h5 class="text-muted mb-3">Sample Counts & Quality</h5>
+            <div class="summary-grid">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-primary">{{ batch_statistics.total_samples }}</h3>
+                        <p class="card-text">Total Samples</p>
+                        <small class="text-muted">Processed successfully</small>
+                    </div>
+                </div>
+
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-warning">{{ batch_statistics.outlier_count }}</h3>
+                        <p class="card-text">Statistical Outliers</p>
+                        <small class="text-muted">
+                            <a href="#" data-bs-toggle="tooltip" data-bs-placement="bottom"
+                               data-bs-title="Outliers are samples that deviate significantly from the group using the IQR (Interquartile Range) method. Values below Q1-1.5×IQR or above Q3+1.5×IQR are flagged. These may indicate sequencing issues, contamination, or genuine biological differences requiring review.">
+                                <i class="bi bi-info-circle"></i> IQR-based detection
+                            </a>
+                        </small>
+                    </div>
+                </div>
+
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-danger">
+                            {% if batch_statistics.low_coverage_count %}
+                                {{ batch_statistics.low_coverage_count }}
+                            {% else %}
+                                0
+                            {% endif %}
+                        </h3>
+                        <p class="card-text">Low Coverage Samples</p>
+                        <small class="text-muted">< 1M final reads</small>
+                    </div>
+                </div>
+            </div>
+
+            <h5 class="text-muted mb-3 mt-4">Read Processing Volume</h5>
+            <div class="summary-grid">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-primary">
+                            {% if batch_statistics.total_reads_millions %}
+                                {{ batch_statistics.total_reads_millions }}M
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </h3>
+                        <p class="card-text">Total Reads Processed</p>
+                        <small class="text-muted">Across all samples</small>
+                    </div>
+                </div>
+
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-info">
+                            {% if batch_statistics.total_final_reads_millions %}
+                                {{ batch_statistics.total_final_reads_millions }}M
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </h3>
+                        <p class="card-text">Final Reads Retained</p>
+                        <small class="text-muted">After all QC steps</small>
+                    </div>
+                </div>
+
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-secondary">
+                            {% if batch_statistics.median_raw_reads_millions %}
+                                {{ batch_statistics.median_raw_reads_millions }}M
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </h3>
+                        <p class="card-text">Median Sample Size</p>
+                        <small class="text-muted">Raw reads per sample</small>
+                    </div>
+                </div>
+            </div>
+
+            <h5 class="text-muted mb-3 mt-4">Processing Efficiency</h5>
+            <div class="summary-grid">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-info">
+                            {% if batch_statistics.clean_retention_median %}
+                                {{ "%.1f"|format(batch_statistics.clean_retention_median) }}%
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </h3>
+                        <p class="card-text">Median Read Retention</p>
+                        <small class="text-muted">Overall pipeline efficiency</small>
+                    </div>
+                </div>
+
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-warning">
+                            {% if batch_statistics.median_trimming_loss_pct %}
+                                {{ batch_statistics.median_trimming_loss_pct }}%
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </h3>
+                        <p class="card-text">Median Trimming Loss</p>
+                        <small class="text-muted">Quality/adapter removal</small>
+                    </div>
+                </div>
+
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-danger">
+                            {% if batch_statistics.median_host_removal_pct %}
+                                {{ batch_statistics.median_host_removal_pct }}%
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </h3>
+                        <p class="card-text">Median Host Removal</p>
+                        <small class="text-muted">Human DNA contamination</small>
+                    </div>
+                </div>
+
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-secondary">
+                            {% if batch_statistics.median_rrna_removal_pct %}
+                                {{ batch_statistics.median_rrna_removal_pct }}%
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </h3>
+                        <p class="card-text">Median rRNA Removal</p>
+                        <small class="text-muted">Ribosomal RNA depletion</small>
+                    </div>
+                </div>
+            </div>
+
+            <h5 class="text-muted mb-3 mt-4">Contamination Levels</h5>
+            <div class="summary-grid">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-success">
+                            {% if batch_statistics.phix_percent_median is defined %}
+                                {{ "%.3f"|format(batch_statistics.phix_percent_median) }}%
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </h3>
+                        <p class="card-text">Median PhiX</p>
+                        <small class="text-muted">Sequencing control</small>
+                    </div>
+                </div>
+
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title text-success">
+                            {% if batch_statistics.vector_percent_median is defined %}
+                                {{ "%.3f"|format(batch_statistics.vector_percent_median) }}%
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </h3>
+                        <p class="card-text">Median Vector</p>
+                        <small class="text-muted">Cloning vector contamination</small>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- Read Processing Summary -->
+        <section id="read-processing" class="mb-5">
+            <h2 class="section-title">Read Processing Summary</h2>
+
+            <div class="row">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Read Count Progression</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="read-progression" class="plotly-container"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Sample Quality Overview -->
+        <section id="sample-overview" class="mb-5">
+            <h2 class="section-title">Sample Quality Overview</h2>
+
+            <!-- Filter Buttons -->
+            <div class="filter-buttons">
+                <button class="btn btn-outline-primary" id="filter-all">All Samples</button>
+                <button class="btn btn-outline-warning" id="filter-outliers">
+                    Outliers Only
+                    <i class="bi bi-info-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                       data-bs-title="Shows samples with quality scores, contamination levels, or read processing metrics that deviate significantly from the batch median (using IQR statistical method)"></i>
+                </button>
+            </div>
+
+            <!-- Sample Table -->
+            <div class="table-responsive">
+                <table id="sample-table" class="table table-striped table-hover" style="width:100%">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Sample</th>
+                            <th>Total Reads</th>
+                            <th>Final Reads</th>
+                            <th>Read Retention %</th>
+                            <th>Host %</th>
+                            <th>rRNA %</th>
+                            <th>PhiX %</th>
+                            <th>Vector %</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sample in samples %}
+                        <tr class="{% if sample.any_outlier %}outlier-highlight{% endif %} {% if sample.clean and sample.clean < 1000000 %}table-warning{% endif %}" data-outlier="{{ sample.any_outlier|lower }}">
+                            <td><strong>{{ sample.sample }}</strong></td>
+                            <td>
+                                {% if sample.raw %}
+                                    <span class="read-count" data-value="{{ sample.raw }}">{{ "%.0f"|format(sample.raw|float) }}</span>
+                                    {% if sample.raw < 1000000 %}
+                                        <small class="text-danger">(Low)</small>
+                                    {% endif %}
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if sample.clean %}
+                                    <span class="read-count" data-value="{{ sample.clean }}">{{ "%.0f"|format(sample.clean|float) }}</span>
+                                    {% if sample.clean < 1000000 %}
+                                        <small class="text-warning">(< 1M)</small>
+                                    {% endif %}
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </td>
+                            <td>{{ "%.1f"|format(sample.clean_retention) if sample.clean_retention else 'N/A' }}</td>
+                            <td>{{ "%.2f"|format(sample.host_percent) if sample.host_percent is defined and sample.host_percent != 'NA' else 'N/A' }}</td>
+                            <td>{{ "%.1f"|format(sample.rrna_percent) if sample.rrna_percent is defined and sample.rrna_percent != 'NA' else 'N/A' }}</td>
+                            <td>{{ "%.3f"|format(sample.phix_percent) if sample.phix_percent is defined else 'N/A' }}</td>
+                            <td>{{ "%.3f"|format(sample.vector_percent) if sample.vector_percent is defined else 'N/A' }}</td>
+                            <td>{{ sample.notes if sample.notes != 'None' else '' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Contamination Analysis -->
+        <section id="contamination-analysis" class="mb-5">
+            <h2 class="section-title">Contamination Analysis</h2>
+
+            <!-- Contamination Distribution -->
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>PhiX/UniVec Contamination Distribution</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="contamination-histogram" class="plotly-container"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>rRNA Contamination Distribution</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="rrna-histogram" class="plotly-container"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contamination Bar Chart -->
+            <div class="row mb-3">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Contamination Levels by Sample</h5>
+                        </div>
+                        <div class="card-body">
+                            {% if base64_images.contamination_bars %}
+                            <img src="{{ base64_images.contamination_bars }}" alt="Contamination Bar Chart" class="img-fluid">
+                            {% else %}
+                            <div class="text-center text-muted p-4">Contamination bar chart not available</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contamination Heatmap -->
+            <div class="row mb-3">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Contamination Heatmap</h5>
+                        </div>
+                        <div class="card-body">
+                            {% if base64_images.contamination_heatmap %}
+                            <img src="{{ base64_images.contamination_heatmap }}" alt="Contamination Heatmap" class="img-fluid">
+                            {% else %}
+                            <div class="text-center text-muted p-4">Contamination heatmap not available</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Primer B Cross-Contamination -->
+            <div class="row mb-3">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Primer B Cross-Contamination</h5>
+                            <small class="text-muted">
+                                <strong>Red circles with "!" symbols</strong> indicate samples with >5% unexpected primer B reads, suggesting cross-contamination between samples during processing.
+                                <span class="badge bg-info ms-2">Threshold: 5%</span>
+                            </small>
+                        </div>
+                        <div class="card-body">
+                            {% if base64_images.primer_b_heatmap %}
+                            <img src="{{ base64_images.primer_b_heatmap }}" alt="Primer B Heatmap" class="img-fluid">
+                            {% else %}
+                            <div class="text-center text-muted p-4">Primer B heatmap not available</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Sample Detail Modal -->
+    <div class="modal fade" id="sampleDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="sampleDetailModalLabel">Sample Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="sampleDetailContent">
+                    <!-- Dynamic content will be inserted here -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.bootstrap5.min.js"></script>
+
+    <!-- Custom JavaScript -->
+    <script>
+        // Report data from backend
+        const reportData = {{ report_data | tojson }};
+
+        $(document).ready(function() {
+            // Format read counts with commas
+            $('.read-count').each(function() {
+                const value = $(this).data('value');
+                if (value && !isNaN(value)) {
+                    $(this).text(parseInt(value).toLocaleString());
+                }
+            });
+
+            // Initialize DataTable
+            const table = $('#sample-table').DataTable({
+                pageLength: 25,
+                order: [[1, 'desc']], // Sort by total reads
+                dom: 'Bfrtip',
+                buttons: [
+                    'copy', 'csv', 'excel'
+                ],
+                columnDefs: [
+                    { className: "text-end", targets: [1, 2, 3, 4, 5, 6, 7] } // Right-align numeric columns
+                ]
+            });
+
+            // Filter buttons
+            $('#filter-all').click(function() {
+                table.search('').columns().search('').draw();
+                $('.btn-outline-primary, .btn-outline-warning').removeClass('active');
+                $(this).addClass('active');
+            });
+
+            $('#filter-outliers').click(function() {
+                // Filter for rows with outlier-highlight class
+                $.fn.dataTable.ext.search.push(
+                    function(settings, data, dataIndex) {
+                        return $(table.row(dataIndex).node()).hasClass('outlier-highlight');
+                    }
+                );
+                table.draw();
+                $('.btn-outline-primary, .btn-outline-warning').removeClass('active');
+                $(this).addClass('active');
+
+                // Remove custom filter after use
+                $.fn.dataTable.ext.search.pop();
+            });
+
+            // Generate plots
+            generateContaminationPlots();
+            generateReadProgressionPlot();
+        });
+
+        function generateContaminationPlots() {
+            // PhiX/UniVec contamination histogram with professional styling to match rRNA
+            const contaminationData = reportData.samples.map(s => (s.phix_percent || 0) + (s.vector_percent || 0)).filter(x => x !== undefined && x !== null);
+
+            if (contaminationData.length > 0) {
+                // Calculate statistics
+                const mean = contaminationData.reduce((a, b) => a + b, 0) / contaminationData.length;
+                const sortedData = [...contaminationData].sort((a, b) => a - b);
+                const median = sortedData.length % 2 === 0
+                    ? (sortedData[sortedData.length/2 - 1] + sortedData[sortedData.length/2]) / 2
+                    : sortedData[Math.floor(sortedData.length/2)];
+
+                const histData = [{
+                    x: contaminationData,
+                    type: 'histogram',
+                    nbinsx: Math.max(8, Math.min(50, Math.ceil(Math.sqrt(contaminationData.length)))),
+                    marker: {
+                        color: '#5B9BD5',  // Steel blue color matching rRNA
+                        line: { color: '#2F5F8F', width: 1 }
+                    },
+                    name: 'Sample Count'
+                }];
+
+                // Add mean and median lines (use a reasonable max height estimate)
+                const maxHeight = Math.ceil(contaminationData.length / 3); // Estimate max bin height
+
+                const meanLine = {
+                    type: 'scatter',
+                    mode: 'lines',
+                    x: [mean, mean],
+                    y: [0, maxHeight],
+                    line: { color: '#FF8C00', width: 3, dash: 'dash' },
+                    name: `Mean: ${mean.toFixed(3)}%`,
+                    showlegend: true,
+                    hoverinfo: 'none'
+                };
+
+                const medianLine = {
+                    type: 'scatter',
+                    mode: 'lines',
+                    x: [median, median],
+                    y: [0, maxHeight],
+                    line: { color: '#DC3545', width: 3, dash: 'dash' },
+                    name: `Median: ${median.toFixed(3)}%`,
+                    showlegend: true,
+                    hoverinfo: 'none'
+                };
+
+                const histLayout = {
+                    title: {
+                        text: `PhiX/UniVec Contamination Distribution (n=${contaminationData.length})<br><sub>PhiX174 + Vector/Plasmid Detection</sub>`,
+                        font: { size: 16, family: 'Arial, sans-serif' }
+                    },
+                    xaxis: {
+                        title: 'Total PhiX + UniVec Contamination (%)',
+                        gridcolor: '#E5E5E5'
+                    },
+                    yaxis: {
+                        title: 'Number of Samples',
+                        gridcolor: '#E5E5E5'
+                    },
+                    showlegend: true,
+                    legend: {
+                        x: 0.02,
+                        y: 0.98,
+                        bgcolor: 'rgba(255,255,255,0.8)',
+                        bordercolor: '#E5E5E5',
+                        borderwidth: 1
+                    },
+                    plot_bgcolor: 'white',
+                    paper_bgcolor: 'white',
+                    margin: { t: 80, b: 50, l: 60, r: 20 }
+                };
+
+                Plotly.newPlot('contamination-histogram', [...histData, meanLine, medianLine], histLayout);
+            } else {
+                // Display message if no contamination data available
+                document.getElementById('contamination-histogram').innerHTML =
+                    '<div class="text-center text-muted p-4">No PhiX/UniVec contamination data available</div>';
+            }
+
+            // rRNA contamination histogram
+            const rrnaData = reportData.samples.map(s => s.rrna_percent).filter(x => x !== undefined && x !== null && x !== 'NA');
+
+            if (rrnaData.length > 0) {
+                // Calculate statistics
+                const mean = rrnaData.reduce((a, b) => a + b, 0) / rrnaData.length;
+                const sortedData = [...rrnaData].sort((a, b) => a - b);
+                const median = sortedData.length % 2 === 0
+                    ? (sortedData[sortedData.length/2 - 1] + sortedData[sortedData.length/2]) / 2
+                    : sortedData[Math.floor(sortedData.length/2)];
+
+                const rrnaHistData = [{
+                    x: rrnaData,
+                    type: 'histogram',
+                    nbinsx: Math.max(8, Math.min(50, Math.ceil(Math.sqrt(rrnaData.length)))),
+                    marker: {
+                        color: '#5B9BD5',  // Steel blue color
+                        line: { color: '#2F5F8F', width: 1 }
+                    },
+                    name: 'Sample Count'
+                }];
+
+                // Add mean and median lines (use a reasonable max height estimate)
+                const maxHeight = Math.ceil(rrnaData.length / 3); // Estimate max bin height
+
+                const meanLine = {
+                    type: 'scatter',
+                    mode: 'lines',
+                    x: [mean, mean],
+                    y: [0, maxHeight],
+                    line: { color: '#FF8C00', width: 3, dash: 'dash' },
+                    name: `Mean: ${mean.toFixed(2)}%`,
+                    showlegend: true,
+                    hoverinfo: 'none'
+                };
+
+                const medianLine = {
+                    type: 'scatter',
+                    mode: 'lines',
+                    x: [median, median],
+                    y: [0, maxHeight],
+                    line: { color: '#DC3545', width: 3, dash: 'dash' },
+                    name: `Median: ${median.toFixed(2)}%`,
+                    showlegend: true,
+                    hoverinfo: 'none'
+                };
+
+                const rrnaHistLayout = {
+                    title: {
+                        text: `Pure rRNA Contamination Distribution (n=${rrnaData.length})<br><sub>Biological rRNA contamination only (excludes PCR deduplication losses)<br>SILVA 138.1 SSU+LSU Database</sub>`,
+                        font: { size: 16, family: 'Arial, sans-serif' }
+                    },
+                    xaxis: {
+                        title: 'Pure rRNA Contamination (%)',
+                        dtick: 20,
+                        gridcolor: '#E5E5E5'
+                    },
+                    yaxis: {
+                        title: 'Number of Samples',
+                        gridcolor: '#E5E5E5'
+                    },
+                    showlegend: true,
+                    legend: {
+                        x: 0.02,
+                        y: 0.98,
+                        bgcolor: 'rgba(255, 255, 255, 0.9)',
+                        bordercolor: '#CCCCCC',
+                        borderwidth: 1
+                    },
+                    plot_bgcolor: 'white',
+                    paper_bgcolor: 'white',
+                    margin: { t: 80, b: 50, l: 60, r: 20 }
+                };
+
+                Plotly.newPlot('rrna-histogram', [...rrnaHistData, meanLine, medianLine], rrnaHistLayout);
+            } else {
+                // Display message if no rRNA data available
+                document.getElementById('rrna-histogram').innerHTML =
+                    '<div class="text-center text-muted p-4">No rRNA contamination data available</div>';
+            }
+        }
+
+        function generateReadProgressionPlot() {
+            // Read progression plot showing retention at each step
+            const steps = ['raw', 'fastp', 'host_depleted', 'rrna_removed', 'clean'];
+            const stepLabels = ['Raw', 'Trimmed', 'Host Depleted', 'rRNA Removed', 'Final Deduplicated'];
+
+            const traces = reportData.samples.map((sample, i) => {
+                const retentions = steps.map(step => {
+                    const retention_key = step + '_retention';
+                    return sample[retention_key] || (step === 'raw' ? 100 : null);
+                });
+
+                return {
+                    x: stepLabels,
+                    y: retentions,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: sample.sample.substring(0, 20) + (sample.sample.length > 20 ? '...' : ''),
+                    line: { width: sample.any_outlier ? 3 : 1 },
+                    marker: { size: sample.any_outlier ? 8 : 5 }
+                };
+            });
+
+            const layout = {
+                title: 'Read Retention Through QC Pipeline',
+                xaxis: { title: 'QC Step' },
+                yaxis: { title: 'Read Retention (%)' },
+                hovermode: 'closest',
+                showlegend: false
+            };
+
+            Plotly.newPlot('read-progression', traces, layout);
+        }
+
+        function showSampleDetails(sampleName) {
+            const sample = reportData.samples.find(s => s.sample === sampleName);
+            if (sample) {
+                const formatNumber = (num) => num ? num.toLocaleString() : 'N/A';
+
+                const content = `
+                    <h6>${sample.sample}</h6>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6 class="text-primary">Quality Metrics</h6>
+                            <strong>Read Retention:</strong> ${sample.clean_retention ? sample.clean_retention.toFixed(1) + '%' : 'N/A'}<br>
+                            <strong>Host Contamination:</strong> ${sample.host_percent !== undefined && sample.host_percent !== 'NA' ? sample.host_percent.toFixed(2) + '%' : 'N/A'}<br>
+                            <br>
+                            <h6 class="text-success">Read Counts</h6>
+                            <strong>Raw Reads:</strong> ${formatNumber(sample.raw)}<br>
+                            <strong>Final Reads:</strong> ${formatNumber(sample.clean)} ${sample.clean && sample.clean < 1000000 ? '<small class="text-warning">(Low coverage)</small>' : ''}<br>
+                            <strong>Reads Lost:</strong> ${sample.raw && sample.clean ? formatNumber(sample.raw - sample.clean) : 'N/A'}<br>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="text-warning">Contamination Levels</h6>
+                            <strong>PhiX:</strong> ${sample.phix_percent !== undefined ? sample.phix_percent.toFixed(3) + '%' : 'N/A'}<br>
+                            <strong>Vector:</strong> ${sample.vector_percent !== undefined ? sample.vector_percent.toFixed(3) + '%' : 'N/A'}<br>
+                            <strong>Host:</strong> ${sample.host_percent !== undefined && sample.host_percent !== 'NA' ? sample.host_percent.toFixed(1) + '%' : 'N/A'}<br>
+                            <strong>rRNA:</strong> ${sample.rrna_percent !== undefined && sample.rrna_percent !== 'NA' ? sample.rrna_percent.toFixed(1) + '%' : 'N/A'}<br>
+                        </div>
+                    </div>
+                    ${sample.notes && sample.notes !== 'None' ? '<div class="mt-3 alert alert-warning"><strong>Notes:</strong> ' + sample.notes + '</div>' : ''}
+                `;
+
+                $('#sampleDetailModalLabel').text('Sample: ' + sampleName);
+                $('#sampleDetailContent').html(content);
+                $('#sampleDetailModal').modal('show');
+            }
+        }
+
+        // Initialize tooltips for outlier explanations
+        document.addEventListener('DOMContentLoaded', function() {
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+        });
+    </script>
+
+    <!-- Methodology Modal -->
+    <div class="modal fade" id="methodologyModal" tabindex="-1" aria-labelledby="methodologyModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="methodologyModalLabel">Statistical Outlier Detection Methodology</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <h6><i class="bi bi-graph-up"></i> IQR (Interquartile Range) Method</h6>
+                    <p>This report uses the IQR statistical method to identify outliers across quality metrics:</p>
+                    <ul>
+                        <li><strong>Q1 (25th percentile):</strong> The value below which 25% of samples fall</li>
+                        <li><strong>Q3 (75th percentile):</strong> The value below which 75% of samples fall</li>
+                        <li><strong>IQR = Q3 - Q1:</strong> The spread of the middle 50% of samples</li>
+                        <li><strong>Outlier thresholds:</strong> Values < Q1-1.5×IQR or > Q3+1.5×IQR</li>
+                    </ul>
+
+                    <h6><i class="bi bi-target"></i> Metrics Evaluated</h6>
+                    <p>Samples are flagged as outliers based on unusual values in any of these metrics:</p>
+                    <ul>
+                        <li><strong>Read Retention:</strong> Percentage of reads surviving quality control</li>
+                        <li><strong>Host Contamination:</strong> Percentage of host reads (VLP prep efficiency)</li>
+                        <li><strong>rRNA Contamination:</strong> Percentage of rRNA reads (biological contamination)</li>
+                        <li><strong>Contamination Levels:</strong> PhiX, vector, host, and rRNA contamination</li>
+                    </ul>
+
+                    <h6><i class="bi bi-lightbulb"></i> Interpreting Outliers</h6>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h7><span class="badge bg-warning">Potential Issues:</span></h7>
+                            <ul>
+                                <li>Library preparation problems</li>
+                                <li>Sequencing quality issues</li>
+                                <li>Sample contamination (host, rRNA, PhiX, vector)</li>
+                                <li>VLP preparation efficiency issues</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <h7><span class="badge bg-info">Biological Variation:</span></h7>
+                            <ul>
+                                <li>Genuine low viral load samples</li>
+                                <li>Different sample types</li>
+                                <li>Natural biological diversity</li>
+                                <li>Expected experimental variation</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info mt-3">
+                        <i class="bi bi-info-circle"></i> <strong>Recommendation:</strong> Review outlier samples individually to determine if they require reprocessing, additional analysis, or represent genuine biological differences.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add methodology link in footer -->
+    <footer class="mt-5 py-3 border-top">
+        <div class="container text-center text-muted">
+            <small>
+                ViromeQC Report |
+                <a href="#" data-bs-toggle="modal" data-bs-target="#methodologyModal">Statistical Methods</a> |
+                Generated on {{ current_timestamp }}
+            </small>
+        </div>
+    </footer>
+</body>
+</html>

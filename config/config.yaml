@@ -5,14 +5,65 @@
 # Output directory
 output_dir: "results"
 
+# ================================================================================
+# Pipeline Control - Modular Execution
+# ================================================================================
+# The pipeline can run in multiple modes:
+# 1. Full QC + Assembly: start_from="raw_reads" + run_assembly=true
+# 2. QC only: start_from="raw_reads" + run_assembly=false
+# 3. Assembly from cleaned reads: start_from="cleaned_reads" + run_assembly=true
+# 4. From contigs: start_from="contigs" (future feature)
+
+pipeline:
+  # Where to start the pipeline
+  # Options: "raw_reads", "cleaned_reads", "contigs"
+  start_from: "raw_reads"
+
+  # Run assembly module?
+  run_assembly: false
+
+  # Assembly strategy (only used if run_assembly=true)
+  # "coassembly": Combine all samples into one assembly (recommended for viromes)
+  # "individual": Assemble each sample separately
+  assembly_strategy: "coassembly"
+
+  # If start_from="cleaned_reads", specify directory containing cleaned reads
+  # Format: {sample}_R1.fastq.gz and {sample}_R2.fastq.gz
+  cleaned_reads_dir: null
+
+# Assembly parameters (only used if run_assembly=true)
+assembly:
+  min_contig_length: 1000  # Minimum contig length to keep (bp)
+
 # Quality filtering parameters
 quality_threshold: 20  # Phred quality score (Q20 = 99% accuracy)
 min_read_length: 100   # Minimum read length after trimming (higher for library prep artifacts)
 
+# Deduplication settings
+deduplication:
+  pcr:
+    # Enable PCR duplicate removal for Round A/B virome data (40 cycles PCR)
+    # Round A/B data typically has 80-90%+ PCR duplicates
+    # Disable for non-PCR-amplified data or low-cycle PCR (<30 cycles)
+    enabled: false  # Set to true for Round A/B virome data
+
+    # Note: Optical duplicates are ALWAYS removed (clumpify step)
+    # This setting only controls PCR duplicate removal (dedupe.sh)
+
 # Reference databases
 references:
   # PhiX174 reference genome (Illumina sequencing control)
-  phix: "resources/phix174.fasta"
+  # Provided in workflow/databases/ - no download needed
+  phix: "workflow/databases/phix174.fasta"
+
+  # Vector/plasmid contamination database
+  # Provided in workflow/databases/ - no download needed
+  vector_contaminants: "workflow/databases/vector_contaminants.fa"
+
+  # Primer B sequences for library prep contamination removal
+  # Each sample should have only one primer B variant; multiple variants indicate cross-contamination
+  primer_b_forward: "workflow/databases/primerB.fa"
+  primer_b_rc: "workflow/databases/primerB_rc.fa"
 
   # Host genome for depletion
   # Replace with your host organism (human, mouse, etc.)
@@ -38,12 +89,58 @@ samples:
     r2: "data/raw/sample2_R2.fastq.gz"
 
 # Auto sample detection (optional)
-# If enabled, automatically finds all paired-end samples in a directory
+# If enabled, automatically finds all paired-end samples in directories
 # This overrides the manual 'samples' section above
 sample_auto_detection:
   enabled: false
+
+  # ==========================================================================
+  # BASIC MODE: Single directory (most common)
+  # ==========================================================================
   # Directory containing fastq.gz files
   input_dir: "data/raw"
+
+  # ==========================================================================
+  # ADVANCED MODES: Multiple directories or recursive scanning
+  # ==========================================================================
+  #
+  # IMPORTANT: When using a custom config file (--configfile path/to/your/config.yaml)
+  # with advanced modes, you MUST set input_dir: null to override the base config:
+  #
+  # sample_auto_detection:
+  #   enabled: true
+  #   input_dir: null        # ← Required! Overrides base config
+  #   input_dirs: [...]      # ← Your directories
+  #
+  # Option 1: Multiple directories (files spread across locations)
+  # Use 'input_dirs' instead of 'input_dir' for multiple directories:
+  #
+  # input_dirs:
+  #   - "data/raw"
+  #   - "data/additional_samples"
+  #   - "/path/to/external/samples"
+  #
+  # Option 2: Recursive scanning (files in subdirectories)
+  # Use 'recursive: true' with 'input_dir':
+  #
+  # input_dir: "data"
+  # recursive: true
+  # max_depth: 3  # Optional: limit recursion depth
+  #
+  # Option 3: Both multiple directories AND recursive scanning
+  # Use 'input_dirs' with 'recursive: true':
+  #
+  # input_dirs: ["data/run1", "data/run2"]
+  # recursive: true
+  #
+  # See example configs:
+  #   - config_multi_directory_example.yaml (multiple directories)
+  #   - config_recursive_example.yaml (recursive scanning)
+  #   - config_auto_detect_example.yaml (basic usage)
+
+  # ==========================================================================
+  # FILE NAMING PATTERNS
+  # ==========================================================================
   # Glob patterns for paired-end reads
   # The '*' will be replaced with the sample name
   # Common patterns:
@@ -54,13 +151,58 @@ sample_auto_detection:
   r1_pattern: "*_R1.fastq.gz"
   r2_pattern: "*_R2.fastq.gz"
 
-# QC thresholds for flagging problematic samples
+  # ==========================================================================
+  # CONFLICT RESOLUTION (for multiple directories or recursive scanning)
+  # ==========================================================================
+  # How to handle duplicate sample names across directories:
+  #   "error"      - Stop with error if duplicates found (default, safest)
+  #   "prefix_dir" - Add directory name prefix (e.g., "dir1_sample1", "dir2_sample1")
+  #   "newest"     - Use sample from most recently modified directory
+  #
+  # conflict_resolution: "error"  # Uncomment if using advanced modes
+
+# Primer B removal and cross-contamination detection
+primer_b:
+  enabled: true                     # Enable/disable primer B removal
+  sample_assignments: null          # Optional TSV file: sample_name\tprimer_b_id (null = auto-detect)
+  contamination_threshold: 0.05     # Flag samples with >5% unexpected primer B reads
+
+  # Advanced: BBDuk trimming parameters (most users won't need to change these)
+  bbduk_forward: {ktrim: "l", k: 16, mink: 9, rcomp: "f", ordered: "t", ow: "t"}
+  bbduk_rc: {ktrim: "r", k: 16, mink: 9, rcomp: "f", ordered: "t", ow: "t"}
+
+# Simplified QC thresholds - 3 essential metrics only
+# ViromeQC enrichment scoring removed as redundant with contamination measurements
 qc_thresholds:
-  min_enrichment_score: 10      # ViromeQC enrichment score
-  max_host_percent: 10          # Maximum % host reads (VLP failure if exceeded)
-  max_rrna_percent: 20          # Maximum % rRNA after removal
+  max_host_percent: 10          # Maximum % host reads (VLP prep efficiency)
+  max_rrna_percent: 20          # Maximum % rRNA contamination (biological contamination)
   min_final_reads: 100000       # Minimum reads after all QC
   max_duplication_rate: 80      # Maximum % duplication
+
+# Virome report configuration
+reporting:
+  # Primary report type (replaces MultiQC)
+  generate_virome_report: true   # Enable user-friendly virome report
+  generate_multiqc_backup: false # Keep MultiQC as backup (for debugging)
+
+  # Report content options
+  include_fastqc_details: true   # Include FastQC metrics in report
+  outlier_detection_method: "iqr"  # Options: iqr, zscore, modified_zscore
+
+  # Quality scoring weights for sample ranking
+  quality_weights:
+    enrichment_score: 0.30       # ViromeQC enrichment weight
+    read_retention: 0.25         # Final read retention weight
+    phix_contamination: 0.20     # PhiX contamination weight (negative)
+    vector_contamination: 0.15   # Vector contamination weight (negative)
+    total_contamination: 0.10    # Total contamination weight (negative)
+
+  # Visualization settings
+  max_samples_in_plots: 100      # Limit for performance with large batches
+  color_scheme: "colorblind_friendly"  # Options: default, colorblind_friendly
+
+  # Export options
+  export_formats: ["html", "json"]  # Options: html, json, pdf (pdf coming soon)
 
 # Computational resources
 # Adjust based on your system

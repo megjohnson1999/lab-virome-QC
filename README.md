@@ -1,6 +1,6 @@
 # Lab Virome QC Pipeline
 
-A comprehensive quality control pipeline for VLP-enriched virome sequencing data generated from RdAB (Random displacement Amplification) protocol and Illumina NovaSeq sequencing.
+A comprehensive quality control and assembly pipeline for VLP-enriched virome sequencing data generated from RdAB (Random displacement Amplification) protocol and Illumina NovaSeq sequencing.
 
 ---
 
@@ -17,14 +17,19 @@ This Snakemake pipeline provides robust QC specifically designed for:
 
 ✅ **NovaSeq-specific QC** - PolyG tail removal (critical for 2-channel chemistry)
 ✅ **VLP enrichment assessment** - ViromeQC enrichment scoring
-✅ **Comprehensive contamination removal** - PhiX, host, rRNA
+✅ **Contamination flagging & removal** - PhiX/vector flagging (non-destructive), host & rRNA removal
+✅ **Statistical outlier detection** - IQR-based contamination QC with publication-quality visualizations
 ✅ **Optical duplicate removal** - Illumina patterned flow cell artifacts
 ✅ **Automated QC flagging** - Pass/fail criteria for each sample
 ✅ **Rich reporting** - MultiQC dashboard with all metrics
+✅ **Modular assembly** - Optional viral metagenome assembly (individual or coassembly strategies)
+✅ **Flexible entry points** - Start from raw reads or previously cleaned reads
 
 ---
 
 ## Pipeline Workflow
+
+### Full Pipeline (QC + Assembly)
 
 ```
 Raw Reads (NovaSeq FASTQ)
@@ -37,20 +42,34 @@ Raw Reads (NovaSeq FASTQ)
     ↓
 [4] FastQC (trimmed reads)
     ↓
-[5] BBDuk (PhiX removal)
+[5] BBDuk (PhiX/vector contamination flagging) ← NEW: Non-destructive detection
     ↓
 [6] minimap2 (host depletion) ← QC metric for VLP success
     ↓
-[7] BBDuk (rRNA removal)
+[7] ViromeQC (enrichment assessment) ← PRIMARY QC metric
     ↓
-[8] ViromeQC (enrichment assessment) ← PRIMARY QC metric
+[8] BBDuk (rRNA removal)
     ↓
 [9] FastQC (final clean reads)
     ↓
 [10] MultiQC (aggregate all reports)
     ↓
-Clean reads + QC reports + Sample flags
+[11] Contamination analysis (statistical outlier detection + plots)
+    ↓
+Clean reads + QC reports + Sample flags + Contamination plots
+    ↓
+    ↓ [OPTIONAL: Assembly Module]
+    ↓
+[12] BBMerge (merge overlapping read pairs)
+    ↓
+[13] MEGAHIT assembly
+    │   ├─→ Individual assembly (per-sample assemblies)
+    │   └─→ Coassembly (all samples pooled)
+    ↓
+Assembled contigs + Assembly statistics
 ```
+
+**Note:** The pipeline is modular - you can run QC-only or QC + Assembly depending on your needs.
 
 ---
 
@@ -144,10 +163,11 @@ See `resources/README.md`
 
 You have three options for specifying samples:
 
-**Option A: Auto-detect samples from a directory (recommended for many samples)**
+**Option A: Auto-detect samples from directories (recommended for many samples)**
 
-Enable auto-detection in `config/config.yaml`:
+The pipeline supports flexible auto-detection with three modes:
 
+**A1. Single directory (simple case)**
 ```yaml
 sample_auto_detection:
   enabled: true
@@ -156,13 +176,46 @@ sample_auto_detection:
   r2_pattern: "*_R2.fastq.gz"        # Pattern for R2 files
 ```
 
-The pipeline will automatically find all paired-end samples matching the pattern. Common patterns:
+**A2. Multiple directories (files spread across locations) - NEW!**
+```yaml
+sample_auto_detection:
+  enabled: true
+  input_dirs:                        # Multiple directories
+    - "data/raw"
+    - "data/additional_samples"
+    - "/path/to/external/data"
+  r1_pattern: "*_R1.fastq.gz"
+  r2_pattern: "*_R2.fastq.gz"
+  conflict_resolution: "prefix_dir"  # Handle duplicate sample names
+```
+
+**A3. Recursive scanning (files in subdirectories) - NEW!**
+```yaml
+sample_auto_detection:
+  enabled: true
+  input_dir: "data"                  # Root directory to scan
+  recursive: true                    # Scan all subdirectories
+  max_depth: 3                       # Optional: limit recursion depth
+  r1_pattern: "*_R1.fastq.gz"
+  r2_pattern: "*_R2.fastq.gz"
+  conflict_resolution: "prefix_dir"  # Recommended for recursive mode
+```
+
+**Conflict resolution strategies** (for duplicate sample names):
+- `"error"` - Stop with error if duplicates found (default)
+- `"prefix_dir"` - Add directory name prefix (e.g., `dir1_sample1`, `dir2_sample1`)
+- `"newest"` - Use sample from most recently modified directory
+
+Common file naming patterns:
 - `*_R1.fastq.gz` / `*_R2.fastq.gz` (default)
 - `*_R1_001.fastq.gz` / `*_R2_001.fastq.gz` (Illumina default naming)
 - `*_1.fq.gz` / `*_2.fq.gz` (short form)
 - `*.R1.fastq.gz` / `*.R2.fastq.gz` (dot separator)
 
-See `config/config_auto_detect_example.yaml` for a complete example.
+**Example configurations:**
+- Single directory: `config/config_auto_detect_example.yaml`
+- Multiple directories: `config/config_multi_directory_example.yaml`
+- Recursive scanning: `config/config_recursive_example.yaml`
 
 **Option B: Edit config.yaml directly**
 ```yaml
@@ -185,15 +238,17 @@ sample2	data/raw/sample2_R1.fastq.gz	data/raw/sample2_R2.fastq.gz
 
 ### 3. Adjust QC Thresholds (Optional)
 
-Edit `config/config.yaml` to set custom QC thresholds:
+Edit `config/config.yaml` to set custom QC thresholds based on your lab's historical data:
 
 ```yaml
 qc_thresholds:
-  min_enrichment_score: 10      # ViromeQC enrichment score
-  max_host_percent: 10          # Maximum % host reads
+  min_enrichment_score: 10      # ViromeQC enrichment score (adjust for your preps)
+  max_host_percent: 10          # Maximum % host reads (adjust for your preps)
   max_rrna_percent: 20          # Maximum % rRNA after removal
-  min_final_reads: 100000       # Minimum reads after QC
+  min_final_reads: 100000       # Minimum reads after QC (adjust for sequencing depth)
 ```
+
+**Note:** These are example starting points. Adjust based on your lab's VLP preparation performance and sequencing platform.
 
 ### 4. Resource Requirements
 
@@ -214,6 +269,114 @@ These allocations handle NovaSeq samples up to 100 million reads. For smaller da
 - **Threads:** Most rules use 4-8 threads
 - **Runtime:** ~2-4 hours per sample (depends on sample size and cluster load)
 - **Storage:** ~10-20 GB per sample for intermediate files
+
+**Assembly Resource Requirements (if enabled):**
+
+| Step | Memory | Threads | Notes |
+|------|--------|---------|-------|
+| BBMerge | 16 GB | 8 | Merge overlapping read pairs |
+| MEGAHIT (individual) | 16-32 GB | 12-16 | Per-sample assembly |
+| MEGAHIT (coassembly) | 64-128 GB | 24 | Memory scales with total data |
+
+---
+
+### 5. Pipeline Modularity and Assembly Configuration
+
+The pipeline supports flexible entry points and optional assembly:
+
+#### Pipeline Modes
+
+**Mode 1: QC Only (default)**
+```yaml
+pipeline:
+  run_assembly: false  # or omit this line
+```
+Runs quality control only, outputs clean reads.
+
+**Mode 2: QC + Assembly**
+```yaml
+pipeline:
+  run_assembly: true
+  assembly_strategy: "individual"  # or "coassembly"
+```
+Runs complete QC followed by viral metagenome assembly.
+
+**Mode 3: Assembly from Existing Clean Reads**
+```yaml
+pipeline:
+  start_from: "cleaned_reads"
+  cleaned_reads_dir: "/path/to/clean_reads"
+  run_assembly: true
+  assembly_strategy: "individual"
+```
+Skips QC, uses existing clean reads for assembly. Useful for re-assembly with different parameters or trying different assembly strategies.
+
+#### Assembly Strategy Options
+
+**Individual Assembly** (recommended for most virome studies)
+```yaml
+assembly_strategy: "individual"
+```
+
+**Advantages:**
+- Preserves sample-specific viral variants
+- Better resolution of dominant strains
+- Captures sample-specific diversity
+- Faster per-sample processing (can parallelize)
+
+**When to use:**
+- Comparing viral populations across conditions/timepoints
+- Low sample counts (<10 samples)
+- Samples with very different viral communities
+- Need sample-specific variant information
+
+**Coassembly** (for shared viral populations)
+```yaml
+assembly_strategy: "coassembly"
+```
+
+**Advantages:**
+- Better assembly of shared/common viruses
+- Higher effective coverage for low-abundance viruses
+- Merges redundant sequences across samples
+- Better for low-depth samples
+
+**When to use:**
+- Technical replicates or similar samples
+- Longitudinal samples from same individual
+- Batch assembly of related samples
+- Reference catalog creation
+
+#### Example Configurations
+
+**Example 1: Full QC + Individual Assembly**
+```yaml
+# config/config.yaml
+pipeline:
+  run_assembly: true
+  assembly_strategy: "individual"
+
+samples:
+  sample1:
+    r1: "data/raw/sample1_R1.fastq.gz"
+    r2: "data/raw/sample1_R2.fastq.gz"
+```
+
+**Example 2: Coassembly from Pre-QC'd Reads**
+```yaml
+# config/config.yaml
+pipeline:
+  start_from: "cleaned_reads"
+  cleaned_reads_dir: "previous_run/clean_reads"
+  run_assembly: true
+  assembly_strategy: "coassembly"
+
+sample_auto_detection:
+  enabled: true
+  input_dir: "previous_run/clean_reads"
+  r1_pattern: "*_R1.fastq.gz"
+  r2_pattern: "*_R2.fastq.gz"
+```
 
 ---
 
@@ -267,22 +430,56 @@ snakemake --dag | dot -Tpng > dag.png
 
 ## Output Structure
 
+### QC-Only Mode
+
 ```
 results/
 ├── fastqc/                    # FastQC reports (raw, trimmed, final)
 ├── clumpify/                  # Optical duplicate removal
 ├── fastp/                     # Adapter trimming + QC
-├── phix_removed/              # PhiX-depleted reads
+├── contamination_flagging/    # PhiX and vector contamination detection stats
+│   ├── phix/                  # Per-sample PhiX contamination stats
+│   └── univec/                # Per-sample vector/plasmid contamination stats
 ├── host_depleted/             # Host-depleted reads
 ├── rrna_removed/              # rRNA-depleted reads (clean)
 ├── viromeqc/                  # ViromeQC enrichment scores
 ├── clean_reads/               # Symlinks to final clean reads
 ├── reports/
 │   ├── read_counts.tsv        # Read counts at each step
-│   └── sample_qc_flags.tsv    # Pass/fail flags per sample
+│   ├── sample_qc_flags.tsv    # Pass/fail flags per sample
+│   ├── contamination_summary.tsv        # Contamination levels per sample
+│   ├── contamination_bars.png           # Bar plot with outliers highlighted
+│   ├── contamination_boxes.png          # Distribution box plots
+│   ├── contamination_scatter.png        # PhiX vs vector correlation
+│   └── contamination_heatmap.png        # Heatmap overview
 ├── multiqc/
 │   └── multiqc_report.html    # Comprehensive QC dashboard
 └── logs/                      # All log files
+```
+
+### With Assembly Enabled
+
+```
+results/
+├── [All QC outputs above]
+├── bbmerge/                   # Merged and unmerged read pairs
+│   ├── {sample}_merged.fastq.gz        # Successfully merged reads
+│   ├── {sample}_R1_unmerged.fastq.gz   # R1 reads that couldn't merge
+│   ├── {sample}_R2_unmerged.fastq.gz   # R2 reads that couldn't merge
+│   └── {sample}_hist.txt               # Insert size histogram
+├── assembly/
+│   ├── final.contigs.fa       # Final assembled contigs (coassembly)
+│   │   OR
+│   ├── per_sample/            # Individual assemblies (if assembly_strategy: "individual")
+│   │   ├── {sample1}/
+│   │   │   ├── final.contigs.fa         # Sample-specific contigs
+│   │   │   └── intermediate_contigs/    # MEGAHIT k-mer intermediates
+│   │   ├── {sample2}/
+│   │   │   └── ...
+│   └── megahit/               # MEGAHIT working directory (coassembly only)
+└── reports/
+    ├── assembly_stats.tsv     # Assembly statistics (N50, total size, etc.)
+    └── [other QC reports]
 ```
 
 ---
@@ -317,35 +514,143 @@ sample2   3.2               FAIL             FAIL       PASS       FAIL         
 
 **Most important QC metric for VLP samples!**
 
-- **Score >>1 (e.g., >10)**: Good VLP enrichment
+- **Score >>1**: Good VLP enrichment (viral reads enriched vs bacterial)
 - **Score ~1**: Poor enrichment (essentially a metagenome)
-- **Score <1**: VLP prep failed
+- **Score <1**: VLP prep failed (less viral content than typical metagenome)
 
 Low scores indicate:
 - Failed VLP preparation
 - Excessive bacterial contamination
 - Sample may need to be excluded or re-processed
 
-### 4. Host Contamination
+Compare your samples to lab standards and previous successful runs to determine acceptable thresholds.
+
+### 4. Contamination Flagging (PhiX & Vector)
+
+**NEW in this version!** See detailed guide: [CONTAMINATION_FLAGGING.md](CONTAMINATION_FLAGGING.md)
+
+Check contamination plots in `results/reports/`:
+- **contamination_bars.png** - Sample-by-sample contamination levels (outliers in red)
+- **contamination_boxes.png** - Distribution across your batch
+- **contamination_scatter.png** - PhiX vs vector correlation
+- **contamination_heatmap.png** - Overview with outliers boxed
+
+**Key Points:**
+- Uses **IQR-based outlier detection** (not fixed thresholds)
+- Identifies samples that deviate from your batch median
+- **Non-destructive**: Flags contamination but doesn't remove reads
+- VLP samples typically have very low contamination (<0.01%)
+- Outliers may indicate library prep issues (not VLP failure)
+
+Check `results/reports/contamination_summary.tsv` for exact percentages.
+
+### 5. Host Contamination
 
 Check `results/host_depleted/*_host_stats.txt`
 
-- **<5% host reads**: Excellent VLP prep
-- **5-10% host**: Acceptable
-- **>10% host**: VLP prep likely failed
+**Key concept:** High host reads indicate VLP prep failure (unlike metagenomes where host removal is routine cleanup).
 
-### 5. Read Retention
+Compare your samples to:
+- Lab historical data for typical VLP prep performance
+- Within-run median to identify outliers
+- Manufacturer specifications if using commercial VLP enrichment kits
+
+### 6. Read Retention
 
 Check `results/reports/read_counts.tsv`
 
-Typical read retention through QC pipeline:
+**Read retention varies widely** depending on:
+- Library quality (adapter content, quality scores)
+- NovaSeq polyG artifact prevalence (2-channel chemistry)
+- rRNA contamination levels (especially for RT-based protocols)
+- Sample type and VLP enrichment efficiency
+
+Compare within-run samples to identify outliers with unusually high losses.
+
+### 7. Assembly Results (if enabled)
+
+#### BBMerge Statistics
+
+Check `results/bbmerge/{sample}_hist.txt` for insert size distributions:
+
 ```
-Raw → Clean: 20-50% retention is normal for VLP samples
+#Mean    206.9
+#Median  213
+#Mode    261
+#STDev   52.5
+#PercentOfPairs  55.241
 ```
 
-Major losses expected at:
-- fastp (adapter trimming, polyG, quality)
-- rRNA removal (if RT-based protocol)
+**Key metrics:**
+- **PercentOfPairs**: Merge rate (typical range: 45-75% for virome data)
+  - Higher merge rates = shorter inserts = more overlapping reads
+  - Lower merge rates = longer inserts = less overlap (both contribute to assembly)
+- **Mean/Median insert size**: Should be 150-250 bp for 2x151bp sequencing
+- **Mode**: Most common insert size in your library
+
+**Interpretation:**
+- Merge rates 50-70% are excellent for virome assembly
+- Consistent insert sizes across samples indicate good library prep
+- Wide standard deviation (>60 bp) may indicate heterogeneous fragmentation
+
+#### Assembly Statistics
+
+Check `results/reports/assembly_stats.tsv`:
+
+```
+sample      num_contigs  total_size_bp  mean_length_bp  longest_contig_bp  n50    l50  gc_percent
+sample1     214          771425         3604            58285              6133   28   41.43
+coassembly  1046         3132678        2994            93393              4598   121  43.50
+```
+
+**Key metrics:**
+
+**N50** (most important assembly quality metric)
+- Length-weighted median contig size
+- Higher N50 = better assembly contiguity
+- **Typical ranges for virome data:**
+  - Individual assemblies: 2-85 kb (varies by sample complexity)
+  - Coassembly: 3-10 kb (depends on shared viral content)
+
+**Number of contigs**
+- Individual: 30-500+ contigs (depends on viral diversity)
+- Coassembly: 500-2000+ contigs (captures pan-virome)
+- More contigs doesn't mean better/worse - reflects biological diversity
+
+**Longest contig**
+- Individual: 50-200 kb (often near-complete viral genomes)
+- Coassembly: 50-150 kb
+- Very long contigs (>100 kb) may represent:
+  - Complete phage genomes (typical: 30-200 kb)
+  - Large DNA viruses
+  - Rare bacterial contamination (if GC% is ~50-65%)
+
+**Total assembly size**
+- Individual: 300 kb - 2 Mb per sample
+- Coassembly: 2-10 Mb (depends on number of samples and diversity)
+- Size reflects captured viral diversity, not necessarily sample quality
+
+**GC content**
+- Viromes typically: 35-50% GC
+- High GC (>55%) may indicate bacterial contamination
+- Very low GC (<30%) may indicate AT-rich viruses (e.g., some ssDNA viruses)
+
+#### Comparing Assembly Strategies
+
+Use your test data to decide between strategies:
+
+**Individual assembly produced longer contigs (higher N50)?**
+- Samples have dominant strain variants
+- Use individual assembly for this dataset
+
+**Coassembly produced longer contigs?**
+- Samples share common viral populations
+- Coassembly provides better resolution
+- Consider coassembly for this dataset
+
+**Similar results?**
+- Either strategy is appropriate
+- Choose based on downstream analysis needs
 
 ---
 
@@ -361,7 +666,7 @@ Major losses expected at:
 
 **Problem:** VLP prep can fail, resulting in metagenome-like contamination
 **Solution:** ViromeQC quantifies enrichment score
-**Action:** Flag samples with enrichment score <10 for review/exclusion
+**Action:** Compare scores across your batch to identify failed preps (significantly lower than batch median)
 
 ### Host Contamination as QC Metric
 
