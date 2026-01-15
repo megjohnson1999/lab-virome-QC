@@ -172,7 +172,6 @@ primer_b:
   bbduk_rc: {ktrim: "r", k: 16, mink: 9, rcomp: "f", ordered: "t", ow: "t"}
 
 # Simplified QC thresholds - 3 essential metrics only
-# ViromeQC enrichment scoring removed as redundant with contamination measurements
 qc_thresholds:
   max_host_percent: 10          # Maximum % host reads (VLP prep efficiency)
   max_rrna_percent: 20          # Maximum % rRNA contamination (biological contamination)
@@ -189,13 +188,12 @@ reporting:
   include_fastqc_details: true   # Include FastQC metrics in report
   outlier_detection_method: "iqr"  # Options: iqr, zscore, modified_zscore
 
-  # Quality scoring weights for sample ranking
+  # Quality scoring weights for sample ranking (DEPRECATED: Now using quality categories)
   quality_weights:
-    enrichment_score: 0.30       # ViromeQC enrichment weight
-    read_retention: 0.25         # Final read retention weight
-    phix_contamination: 0.20     # PhiX contamination weight (negative)
-    vector_contamination: 0.15   # Vector contamination weight (negative)
-    total_contamination: 0.10    # Total contamination weight (negative)
+    read_retention: 0.40         # Final read retention weight
+    phix_contamination: 0.25     # PhiX contamination weight (negative)
+    vector_contamination: 0.20   # Vector contamination weight (negative)
+    total_contamination: 0.15    # Total contamination weight (negative)
 
   # Visualization settings
   max_samples_in_plots: 100      # Limit for performance with large batches

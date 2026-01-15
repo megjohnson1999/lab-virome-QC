@@ -11,15 +11,13 @@ Provides quality categories (Excellent/Good/Concerning/Poor) based on practical
 thresholds rather than binary pass/fail assessments, allowing researchers to make
 informed decisions about sample usability for their specific analysis goals.
 
-Note: ViromeQC enrichment scoring removed as redundant with direct contamination measurements
 """
 
 import pandas as pd
 import sys
 from pathlib import Path
 
-# ViromeQC parsing function removed - enrichment scoring no longer used
-# Quality assessment now relies on direct contamination measurements
+# Quality assessment relies on direct contamination measurements
 
 def categorize_quality(host_pct: float, rrna_pct: float, final_reads: int,
                       max_host_pct: float, max_rrna_pct: float, min_final_reads: int) -> str:

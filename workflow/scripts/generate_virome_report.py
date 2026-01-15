@@ -35,7 +35,7 @@ except ImportError:
 # Suppress pandas warnings for cleaner output
 warnings.filterwarnings('ignore', category=FutureWarning)
 
-class ViromeQCDataLoader:
+class ViromePipelineDataLoader:
     """
     Unified data loader for all virome QC data sources
     """
@@ -73,45 +73,6 @@ class ViromeQCDataLoader:
         """Load primer B contamination data"""
         return pd.read_csv(primer_b_file, sep='\t')
 
-    def load_viromeqc_data(self, viromeqc_files: List[str]) -> pd.DataFrame:
-        """Load and parse ViromeQC enrichment scores"""
-        viromeqc_data = []
-
-        for vqc_file in viromeqc_files:
-            # Extract sample name from file path
-            sample = Path(vqc_file).stem.replace('_viromeqc', '')
-
-            enrichment_score = None
-            try:
-                # Parse as TSV file
-                df = pd.read_csv(vqc_file, sep='\t')
-
-                # Look for enrichment score column (handles typo "enrichmnet")
-                enrichment_cols = [col for col in df.columns
-                                 if 'enrichment' in col.lower() or 'enrichmnet' in col.lower()]
-
-                if enrichment_cols and len(df) > 0:
-                    enrichment_score = float(df[enrichment_cols[0]].iloc[0])
-
-            except Exception as e:
-                print(f"Warning: Failed to parse ViromeQC file {vqc_file}: {e}")
-                # Fallback to old method for backward compatibility
-                try:
-                    with open(vqc_file) as f:
-                        for line in f:
-                            if "enrichment" in line.lower():
-                                parts = line.strip().split()
-                                enrichment_score = float(parts[-1])
-                                break
-                except:
-                    pass
-
-            viromeqc_data.append({
-                'sample': sample,
-                'enrichment_score': enrichment_score
-            })
-
-        return pd.DataFrame(viromeqc_data)
 
     def parse_fastqc_summary(self, fastqc_files: List[str]) -> pd.DataFrame:
         """Parse FastQC summary statistics from ZIP files"""
@@ -136,7 +97,7 @@ class ViromeQCDataLoader:
 
         return pd.DataFrame(fastqc_data)
 
-class ViromeQCOutlierDetector:
+class ViromePipelineOutlierDetector:
     """
     Enhanced outlier detection across all QC metrics
     """
@@ -202,7 +163,7 @@ class ViromeQCOutlierDetector:
 
         return outlier_df
 
-class ViromeQCReportGenerator:
+class ViromePipelineReportGenerator:
     """
     Main class for generating virome QC reports
     """
@@ -213,8 +174,8 @@ class ViromeQCReportGenerator:
         self.outputs = outputs
         self.config = config
 
-        self.loader = ViromeQCDataLoader(config)
-        self.outlier_detector = ViromeQCOutlierDetector()
+        self.loader = ViromePipelineDataLoader(config)
+        self.outlier_detector = ViromePipelineOutlierDetector()
         self.unified_data = None
 
     def load_all_data(self):
@@ -226,7 +187,6 @@ class ViromeQCReportGenerator:
         contamination = self.loader.load_contamination_data(self.inputs['contamination_summary'])
         qc_metrics = self.loader.load_qc_metrics(self.inputs['qc_metrics'])
         primer_b = self.loader.load_primer_b_data(self.inputs['primer_b_summary'])
-        # ViromeQC data loading removed - enrichment scoring no longer used
 
         # Start with QC metrics as the base (has all samples)
         unified = qc_metrics.set_index('sample')
@@ -246,7 +206,6 @@ class ViromeQCReportGenerator:
         # Reset index to have sample as column
         unified = unified.reset_index()
 
-        # ViromeQC enrichment score correction logic removed - no longer needed
         # QC metrics now use simplified 3-metric system
 
         self.unified_data = unified
@@ -505,7 +464,7 @@ def main():
     config = snakemake.config
 
     # Generate report
-    generator = ViromeQCReportGenerator(inputs, outputs, config)
+    generator = ViromePipelineReportGenerator(inputs, outputs, config)
     report_data = generator.generate()
 
     return report_data

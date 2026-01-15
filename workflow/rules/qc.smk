@@ -325,7 +325,7 @@ rule host_depletion:
     For VLP-enriched samples, high host contamination (>10%) indicates VLP prep failure
     This step serves dual purpose:
     1. Remove host sequences from analysis
-    2. QC metric for VLP enrichment success
+    2. QC metric for VLP prep efficiency
 
     Note: Now operates after primer B removal (PhiX/vector flagging doesn't filter reads)
     Note: Minimap2 loads host genome index (~12GB for human) plus read processing
@@ -465,9 +465,7 @@ rule remove_pcr_duplicates:
         grep -E "^(Input|Duplicates|Result)" {log} > {output.stats} || true
         """
 
-# ViromeQC rule removed - enrichment scoring was redundant with host/rRNA contamination metrics
-# This removes the most computationally expensive QC step (16GB memory, 6-hour runtime)
-# Quality assessment now relies on directly measurable metrics: host_percent, rrna_percent, final_reads
+# Quality assessment relies on directly measurable metrics: host_percent, rrna_percent, final_reads
 
 rule final_fastqc:
     """
