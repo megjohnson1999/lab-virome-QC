@@ -8,8 +8,8 @@ dashboard and publication-ready PDF reports.
 
 Replaces MultiQC with virome-specific reporting focused on:
 - Batch-level overview and outlier identification
-- Clear pass/fail assessment
-- Sample ranking by quality metrics
+- Quality metric visualization and assessment
+- Sample ranking by practical metrics
 - Interactive exploration and static sharing
 """
 
@@ -65,9 +65,9 @@ class ViromeQCDataLoader:
         """Load contamination summary data"""
         return pd.read_csv(contamination_file, sep='\t')
 
-    def load_qc_flags(self, qc_flags_file: str) -> pd.DataFrame:
-        """Load QC pass/fail flags"""
-        return pd.read_csv(qc_flags_file, sep='\t')
+    def load_qc_metrics(self, qc_metrics_file: str) -> pd.DataFrame:
+        """Load QC quality metrics"""
+        return pd.read_csv(qc_metrics_file, sep='\t')
 
     def load_primer_b_data(self, primer_b_file: str) -> pd.DataFrame:
         """Load primer B contamination data"""
@@ -224,12 +224,12 @@ class ViromeQCReportGenerator:
         # Load individual data sources
         read_counts = self.loader.load_read_counts(self.inputs['read_counts'])
         contamination = self.loader.load_contamination_data(self.inputs['contamination_summary'])
-        qc_flags = self.loader.load_qc_flags(self.inputs['qc_flags'])
+        qc_metrics = self.loader.load_qc_metrics(self.inputs['qc_metrics'])
         primer_b = self.loader.load_primer_b_data(self.inputs['primer_b_summary'])
         # ViromeQC data loading removed - enrichment scoring no longer used
 
-        # Start with QC flags as the base (has all samples)
-        unified = qc_flags.set_index('sample')
+        # Start with QC metrics as the base (has all samples)
+        unified = qc_metrics.set_index('sample')
 
         # Merge other data sources
         if not read_counts.empty:
@@ -247,7 +247,7 @@ class ViromeQCReportGenerator:
         unified = unified.reset_index()
 
         # ViromeQC enrichment score correction logic removed - no longer needed
-        # QC flags now use simplified 3-metric system
+        # QC metrics now use simplified 3-metric system
 
         self.unified_data = unified
         print(f"Successfully loaded data for {len(unified)} samples")
@@ -491,7 +491,7 @@ def main():
     inputs = {
         'read_counts': snakemake.input.read_counts,
         'contamination_summary': snakemake.input.contamination_summary,
-        'qc_flags': snakemake.input.qc_flags,
+        'qc_metrics': snakemake.input.qc_metrics,
         'primer_b_summary': snakemake.input.primer_b_summary,
         'fastqc_files': snakemake.input.get('fastqc_files', [])
     }

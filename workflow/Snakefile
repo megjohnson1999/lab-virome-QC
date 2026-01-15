@@ -127,8 +127,8 @@ def get_final_outputs():
         outputs.extend([
             # Read count tracking
             f"{OUTDIR}/reports/read_counts.tsv",
-            # Sample QC flags
-            f"{OUTDIR}/reports/sample_qc_flags.tsv",
+            # Sample QC metrics
+            f"{OUTDIR}/reports/sample_qc_metrics.tsv",
             # Contamination flagging
             f"{OUTDIR}/reports/contamination_summary.tsv",
             f"{OUTDIR}/reports/contamination_bars.png",
@@ -202,8 +202,8 @@ def get_qc_outputs():
         outputs.extend([
             # Read count tracking
             f"{OUTDIR}/reports/read_counts.tsv",
-            # Sample QC flags
-            f"{OUTDIR}/reports/sample_qc_flags.tsv",
+            # Sample QC metrics
+            f"{OUTDIR}/reports/sample_qc_metrics.tsv",
             # Contamination flagging summary
             f"{OUTDIR}/reports/contamination_summary.tsv",
             # Contamination plots

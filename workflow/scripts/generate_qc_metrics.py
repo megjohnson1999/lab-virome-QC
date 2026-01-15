@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """
-Generate QC pass/fail flags for virome samples
+Generate QC quality metrics for virome samples
 
 Evaluates samples based on 3 essential quality metrics:
 - % host reads (VLP prep efficiency)
 - % rRNA reads (biological contamination)
 - Final read count after QC (sequencing depth)
+
+Provides quality categories (Excellent/Good/Concerning/Poor) based on practical
+thresholds rather than binary pass/fail assessments, allowing researchers to make
+informed decisions about sample usability for their specific analysis goals.
 
 Note: ViromeQC enrichment scoring removed as redundant with direct contamination measurements
 """
@@ -16,6 +20,45 @@ from pathlib import Path
 
 # ViromeQC parsing function removed - enrichment scoring no longer used
 # Quality assessment now relies on direct contamination measurements
+
+def categorize_quality(host_pct: float, rrna_pct: float, final_reads: int,
+                      max_host_pct: float, max_rrna_pct: float, min_final_reads: int) -> str:
+    """
+    Categorize sample quality based on practical thresholds
+
+    Categories:
+    - Excellent: All metrics well within thresholds
+    - Good: All metrics pass but some approaching thresholds
+    - Concerning: One metric exceeds threshold but sample still usable
+    - Poor: Multiple metrics exceed thresholds, likely problematic
+    """
+    host_excellent = host_pct <= max_host_pct * 0.5
+    host_good = host_pct <= max_host_pct
+
+    rrna_excellent = rrna_pct <= max_rrna_pct * 0.5
+    rrna_good = rrna_pct <= max_rrna_pct
+
+    reads_excellent = final_reads >= min_final_reads * 2
+    reads_good = final_reads >= min_final_reads
+
+    # Count issues
+    issues = 0
+    if not host_good:
+        issues += 1
+    if not rrna_good:
+        issues += 1
+    if not reads_good:
+        issues += 1
+
+    if issues == 0:
+        if host_excellent and rrna_excellent and reads_excellent:
+            return "Excellent"
+        else:
+            return "Good"
+    elif issues == 1:
+        return "Concerning"
+    else:
+        return "Poor"
 
 def main():
     # Get inputs from snakemake
@@ -39,15 +82,13 @@ def main():
     samples = read_df['sample'].unique()
 
     for sample in samples:
-        # Simplified flags structure - 3 quality metrics only
-        flags = {
+        # Quality metrics structure - 3 essential metrics
+        metrics = {
             'sample': sample,
             'host_percent': 'NA',
-            'pass_host': 'UNKNOWN',
             'rrna_percent': 'NA',
-            'pass_rrna': 'UNKNOWN',
-            'pass_final_count': 'UNKNOWN',
-            'overall_pass': 'UNKNOWN',
+            'final_reads': 'NA',
+            'quality_category': 'Unknown',
             'notes': []
         }
 
@@ -64,13 +105,7 @@ def main():
             # the true host contamination % without including QC filtering losses
             host_removed = fastp_count - host_depleted
             host_pct = (host_removed / fastp_count) * 100 if fastp_count > 0 else 0
-            flags['host_percent'] = host_pct
-
-            if host_pct <= max_host_pct:
-                flags['pass_host'] = 'PASS'
-            else:
-                flags['pass_host'] = 'FAIL'
-                flags['notes'].append(f'High_host({host_pct:.1f}%)')
+            metrics['host_percent'] = host_pct
 
             # Calculate % pure rRNA contamination (biological contamination only)
             # Use the actual rrna_removed step count rather than combined processing losses
@@ -84,37 +119,25 @@ def main():
                 # Fallback to old method if rrna_removed step not found
                 rrna_contamination = host_depleted - clean_count
                 rrna_pct = (rrna_contamination / host_depleted) * 100 if host_depleted > 0 else 0
-            flags['rrna_percent'] = rrna_pct
+            metrics['rrna_percent'] = rrna_pct
+            metrics['final_reads'] = clean_count
 
-            if rrna_pct <= max_rrna_pct:
-                flags['pass_rrna'] = 'PASS'
-            else:
-                flags['pass_rrna'] = 'FAIL'
-                flags['notes'].append(f'High_rRNA({rrna_pct:.1f}%)')
+            # Categorize overall quality
+            metrics['quality_category'] = categorize_quality(
+                host_pct, rrna_pct, clean_count,
+                max_host_pct, max_rrna_pct, min_final
+            )
 
-            # Check final read count
-            if clean_count >= min_final:
-                flags['pass_final_count'] = 'PASS'
-            else:
-                flags['pass_final_count'] = 'FAIL'
-                flags['notes'].append(f'Low_final_reads({int(clean_count)})')
+            # Add informational notes (not failure indicators)
+            if host_pct > max_host_pct:
+                metrics['notes'].append(f'High_host({host_pct:.1f}%)')
+            if rrna_pct > max_rrna_pct:
+                metrics['notes'].append(f'High_rRNA({rrna_pct:.1f}%)')
+            if clean_count < min_final:
+                metrics['notes'].append(f'Low_coverage({int(clean_count)})')
 
-        # Overall pass/fail - simplified to 3 essential metrics
-        all_checks = [
-            flags['pass_host'],
-            flags['pass_rrna'],
-            flags['pass_final_count']
-        ]
-
-        if 'FAIL' in all_checks:
-            flags['overall_pass'] = 'FAIL'
-        elif 'UNKNOWN' in all_checks:
-            flags['overall_pass'] = 'WARNING'
-        else:
-            flags['overall_pass'] = 'PASS'
-
-        flags['notes'] = ';'.join(flags['notes']) if flags['notes'] else 'None'
-        results.append(flags)
+        metrics['notes'] = ';'.join(metrics['notes']) if metrics['notes'] else 'None'
+        results.append(metrics)
 
     # Write results
     results_df = pd.DataFrame(results)
@@ -122,13 +145,19 @@ def main():
 
     # Print summary
     print("\n" + "="*60)
-    print("SIMPLIFIED QC FLAGS SUMMARY (3 Essential Metrics)")
+    print("VIROME QC METRICS SUMMARY (3 Essential Metrics)")
     print("="*60)
     print(f"Samples evaluated: {len(results_df)}")
-    print(f"PASS: {len(results_df[results_df['overall_pass'] == 'PASS'])}")
-    print(f"FAIL: {len(results_df[results_df['overall_pass'] == 'FAIL'])}")
-    print(f"WARNING: {len(results_df[results_df['overall_pass'] == 'WARNING'])}")
+
+    # Count samples by quality category
+    quality_counts = results_df['quality_category'].value_counts()
+    for category in ['Excellent', 'Good', 'Concerning', 'Poor', 'Unknown']:
+        count = quality_counts.get(category, 0)
+        print(f"{category}: {count}")
+
     print("")
+    print("Sample Details:")
+    print("-" * 60)
     print(results_df.to_string(index=False))
     print("="*60 + "\n")
 

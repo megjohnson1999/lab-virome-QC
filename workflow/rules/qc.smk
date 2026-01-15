@@ -667,22 +667,23 @@ rule plot_primer_b_heatmap:
     script:
         "../scripts/plot_primer_b_heatmap.py"
 
-rule qc_flags:
+rule qc_metrics:
     """
-    Generate QC pass/fail flags for each sample based on:
-    - ViromeQC enrichment score
-    - % host reads
-    - % rRNA reads
-    - Final read count
+    Generate QC quality metrics for each sample based on:
+    - % host reads (VLP prep efficiency)
+    - % rRNA reads (biological contamination)
+    - Final read count after QC (sequencing depth)
+
+    Provides quality categories rather than binary pass/fail assessments.
     """
     input:
         read_counts = f"{OUTDIR}/reports/read_counts.tsv"
     output:
-        f"{OUTDIR}/reports/sample_qc_flags.tsv"
+        f"{OUTDIR}/reports/sample_qc_metrics.tsv"
     conda:
         "../envs/qc.yaml"
     script:
-        "../scripts/generate_qc_flags.py"
+        "../scripts/generate_qc_metrics.py"
 
 rule multiqc:
     """
@@ -699,8 +700,8 @@ rule multiqc:
         expand(f"{OUTDIR}/fastp/{{sample}}_fastp.json", sample=SAMPLES),
         # Read counts
         f"{OUTDIR}/reports/read_counts.tsv",
-        # QC flags
-        f"{OUTDIR}/reports/sample_qc_flags.tsv",
+        # QC metrics
+        f"{OUTDIR}/reports/sample_qc_metrics.tsv",
         # Contamination summary
         f"{OUTDIR}/reports/contamination_summary.tsv"
     output:
@@ -731,7 +732,7 @@ rule virome_report:
         # QC data sources
         read_counts=f"{OUTDIR}/reports/read_counts.tsv",
         contamination_summary=f"{OUTDIR}/reports/contamination_summary.tsv",
-        qc_flags=f"{OUTDIR}/reports/sample_qc_flags.tsv",
+        qc_metrics=f"{OUTDIR}/reports/sample_qc_metrics.tsv",
         primer_b_summary=f"{OUTDIR}/reports/primer_b_contamination_summary.tsv",
         # Plot files for report
         contamination_plots=[
