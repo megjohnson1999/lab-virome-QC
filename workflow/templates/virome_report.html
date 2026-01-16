@@ -442,18 +442,18 @@
             {% if batch_statistics.total_samples > 100 %}
             <div class="alert alert-info" role="alert">
                 <h5><i class="bi bi-info-circle-fill"></i> Large Dataset Visualization Strategy</h5>
-                <p>With <strong>{{ batch_statistics.total_samples }}</strong> samples, some plots are optimized for readability:</p>
+                <p>With <strong>{{ batch_statistics.total_samples }}</strong> samples, visualizations are optimized for readability:</p>
                 <ul class="mb-2">
-                    <li><strong>Bar charts:</strong> Show top 25 highest contamination samples</li>
-                    <li><strong>Heatmaps:</strong> Show outliers + top contaminants + representative samples</li>
-                    <li><strong>Box & scatter plots:</strong> Include all {{ batch_statistics.total_samples }} samples</li>
+                    <li><strong>Distribution histograms:</strong> Include all {{ batch_statistics.total_samples }} samples</li>
+                    <li><strong>Bar chart:</strong> Shows top 25 highest contamination samples</li>
+                    <li><strong>Heatmap:</strong> Shows outliers + top contaminants + representative samples</li>
                 </ul>
-                <small class="text-muted"><i class="bi bi-lightbulb"></i> <strong>Why:</strong> This approach balances comprehensive analysis with readable visualizations for actionable insights.</small>
+                <small class="text-muted"><i class="bi bi-lightbulb"></i> <strong>Why:</strong> Distribution plots show the complete picture, while bar charts and heatmaps focus on actionable outliers.</small>
             </div>
             {% elif batch_statistics.total_samples > 50 %}
             <div class="alert alert-info" role="alert">
-                <h5><i class="bi bi-info-circle-fill"></i> Focused Bar Charts</h5>
-                <p>With <strong>{{ batch_statistics.total_samples }}</strong> samples, <strong>bar charts show the top 25 highest contamination samples</strong> for readability. Distribution plots (box plots) and scatter plots include all samples.</p>
+                <h5><i class="bi bi-info-circle-fill"></i> Focused Bar Chart</h5>
+                <p>With <strong>{{ batch_statistics.total_samples }}</strong> samples, the <strong>bar chart shows the top 25 highest contamination samples</strong> for readability. Distribution histograms include all samples.</p>
             </div>
             {% endif %}
 
