@@ -42,10 +42,11 @@ def plot_contamination_bars(df, output_prefix):
 
     # Smart scaling: For large datasets, focus on top contaminants
     if n_samples > 50:
-        # Sort by total contamination and take top 25 worst samples
+        # Sort by total contamination and take top N worst samples (configurable)
+        top_n = min(25, n_samples)  # Show up to 25 samples or all if fewer
         df_sorted = df.sort_values('total_contamination_percent', ascending=False)
-        df_display = df_sorted.head(25).sort_values('total_contamination_percent', ascending=True)
-        title_suffix = f"\nShowing Top 25 Highest Contamination (of {n_samples} total samples)"
+        df_display = df_sorted.head(top_n).sort_values('total_contamination_percent', ascending=True)
+        title_suffix = f"\nShowing Top {top_n} Highest Contamination (of {n_samples} total samples)"
         n_display = len(df_display)
     else:
         # Show all samples for smaller datasets
