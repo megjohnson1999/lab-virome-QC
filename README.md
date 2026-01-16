@@ -21,7 +21,7 @@ This Snakemake pipeline provides robust QC specifically designed for:
 ✅ **Statistical outlier detection** - IQR-based contamination QC with publication-quality visualizations
 ✅ **Optical duplicate removal** - Illumina patterned flow cell artifacts
 ✅ **Cross-contamination detection** - Primer B analysis for sample mixing issues
-✅ **Automated QC flagging** - Pass/fail criteria for each sample
+✅ **Automated QC assessment** - Quality categories (Excellent/Good/Concerning/Poor) for each sample
 ✅ **Rich HTML reporting** - Self-contained virome dashboard with interactive plots
 ✅ **Modular assembly** - Optional viral metagenome assembly (individual or coassembly strategies)
 ✅ **Flexible entry points** - Start from raw reads or previously cleaned reads
@@ -68,7 +68,7 @@ Raw Reads (NovaSeq FASTQ)
     ↓
 [10] Contamination analysis (statistical outlier detection + plots)
     ↓
-Clean reads + QC reports + Sample flags + Contamination plots
+Clean reads + QC reports + Quality metrics + Contamination plots
     ↓
     ↓ [OPTIONAL: Assembly Module]
     ↓
@@ -459,7 +459,7 @@ results/
 │   ├── virome_report.html     # Primary HTML QC dashboard
 │   ├── virome_report.json     # Machine-readable QC data
 │   ├── read_counts.tsv        # Read counts at each step
-│   ├── sample_qc_flags.tsv    # Pass/fail flags per sample
+│   ├── sample_qc_metrics.tsv  # Quality assessment metrics per sample
 │   ├── contamination_summary.tsv        # Contamination levels per sample
 │   ├── contamination_bars.png           # Bar plot with outliers highlighted
 │   ├── contamination_boxes.png          # Distribution box plots
@@ -510,19 +510,23 @@ Open `results/multiqc/multiqc_report.html` in a web browser.
 - **fastp**: Check adapter content, insert size distribution, duplication rates
 - **Read counts**: Track reads retained at each step
 
-### 2. Sample QC Flags
+### 2. Sample Quality Assessment
 
-Check `results/reports/sample_qc_flags.tsv`:
+Check `results/reports/sample_qc_metrics.tsv`:
 
 ```
-sample    enrichment_score  pass_enrichment  pass_host  pass_rrna  overall_pass  notes
-sample1   25.3              PASS             PASS       PASS       PASS          None
-sample2   3.2               FAIL             FAIL       PASS       FAIL          Low_enrichment(3.2);High_host(15.3%)
+sample    host_percent  rrna_percent  final_reads  quality_category  notes
+sample1   4.2          8.5           2500000      Excellent         None
+sample2   15.3         25.2          450000       Concerning        High_host(15.3%);High_rRNA(25.2%)
+sample3   2.1          12.4          150000       Good              Low_coverage(150000)
+sample4   28.7         45.1          80000        Poor              High_host(28.7%);High_rRNA(45.1%);Low_coverage(80000)
 ```
 
-**Interpretation:**
-- **PASS**: Sample meets all QC criteria
-- **FAIL**: Sample fails one or more criteria (check notes)
+**Quality Categories:**
+- **Excellent**: All metrics well within thresholds (≤5% host, ≤10% rRNA, ≥200K reads)
+- **Good**: All metrics pass basic thresholds but some approaching limits
+- **Concerning**: One metric exceeds threshold but sample may still be usable
+- **Poor**: Multiple metrics exceed thresholds, likely problematic sample
 - **WARNING**: Insufficient data to assess
 
 ### 3. Contamination Flagging (PhiX & Vector)

@@ -347,9 +347,33 @@ class ViromePipelineReportGenerator:
 
         return base64_images
 
-    def generate_html_report(self, template_dir: str, output_file: str) -> bool:
+    def link_images_externally(self, output_dir: str) -> Dict[str, str]:
         """
-        Generate HTML report using Jinja2 template with embedded images
+        Generate relative paths to image files instead of base64 encoding
+        """
+        image_files = {
+            'contamination_bars': 'contamination_bars.png',
+            'contamination_heatmap': 'contamination_heatmap.png',
+            'primer_b_heatmap': 'primer_b_heatmap.png'
+        }
+
+        image_links = {}
+
+        for key, filename in image_files.items():
+            image_path = Path(output_dir) / filename
+
+            if image_path.exists():
+                image_links[key] = filename  # Relative path for HTML
+                print(f"Linked external image: {filename}")
+            else:
+                print(f"Warning: Image file not found: {image_path}")
+                image_links[key] = None
+
+        return image_links
+
+    def generate_html_reports(self, template_dir: str, output_file: str, output_file_standalone: str = None) -> bool:
+        """
+        Generate both lightweight and standalone HTML reports
         """
         if not JINJA2_AVAILABLE:
             print("Skipping HTML generation - jinja2 not available")
@@ -362,33 +386,62 @@ class ViromePipelineReportGenerator:
 
             # Generate report data
             report_data = self.generate_json_data()
-
-            # Encode images as base64 for embedding
             output_dir = Path(output_file).parent
-            base64_images = self.encode_images_as_base64(str(output_dir))
 
-            # Render template
-            html_content = template.render(
+            # Generate lightweight version (external images)
+            print("Generating lightweight HTML report with external images...")
+            image_links = self.link_images_externally(str(output_dir))
+
+            html_content_light = template.render(
                 batch_statistics=report_data['batch_statistics'],
                 samples=report_data['samples'],
                 config=report_data['config'],
                 timestamp=report_data['timestamp'],
-                report_data=report_data,  # Full data for JavaScript
-                base64_images=base64_images  # Base64-encoded images
+                report_data=report_data,
+                image_links=image_links,  # External image references
+                base64_images={},  # Empty for lightweight version
+                standalone_version=False
             )
 
-            # Write HTML file
             with open(output_file, 'w', encoding='utf-8') as f:
-                f.write(html_content)
+                f.write(html_content_light)
 
-            print(f"HTML report generated: {output_file}")
+            print(f"Lightweight HTML report generated: {output_file}")
+
+            # Generate standalone version (embedded images) if requested
+            if output_file_standalone:
+                print("Generating standalone HTML report with embedded images...")
+                base64_images = self.encode_images_as_base64(str(output_dir))
+
+                html_content_standalone = template.render(
+                    batch_statistics=report_data['batch_statistics'],
+                    samples=report_data['samples'],
+                    config=report_data['config'],
+                    timestamp=report_data['timestamp'],
+                    report_data=report_data,
+                    image_links={},  # Empty for standalone version
+                    base64_images=base64_images,  # Base64-encoded images
+                    standalone_version=True
+                )
+
+                with open(output_file_standalone, 'w', encoding='utf-8') as f:
+                    f.write(html_content_standalone)
+
+                print(f"Standalone HTML report generated: {output_file_standalone}")
+
             return True
 
         except Exception as e:
-            print(f"Error generating HTML report: {e}")
+            print(f"Error generating HTML reports: {e}")
             import traceback
             traceback.print_exc()
             return False
+
+    def generate_html_report(self, template_dir: str, output_file: str) -> bool:
+        """
+        Backward compatibility wrapper - generates lightweight version only
+        """
+        return self.generate_html_reports(template_dir, output_file)
 
     def generate(self):
         """Main generation method"""
@@ -415,18 +468,23 @@ class ViromePipelineReportGenerator:
 
         print(f"\nGenerated structured report data: {output_json}")
 
-        # Phase 6: Generate HTML report
+        # Phase 6: Generate HTML reports (both versions)
         html_output = self.outputs.get('html_report')
+        html_standalone_output = self.outputs.get('html_report_standalone')
+
         if html_output:
             # Determine template directory relative to script location
             script_dir = Path(__file__).parent
             template_dir = script_dir.parent / 'templates'
 
-            success = self.generate_html_report(str(template_dir), html_output)
+            success = self.generate_html_reports(str(template_dir), html_output, html_standalone_output)
             if success:
-                print(f"HTML report generated: {html_output}")
+                print(f"HTML reports generated:")
+                print(f"  Lightweight version: {html_output}")
+                if html_standalone_output:
+                    print(f"  Standalone version: {html_standalone_output}")
             else:
-                print("Failed to generate HTML report")
+                print("Failed to generate HTML reports")
 
         # Phase 7: Generate PDF report (placeholder for future implementation)
         pdf_output = self.outputs.get('pdf_report')
@@ -458,6 +516,7 @@ def main():
     outputs = {
         'json_data': snakemake.output.json_data,
         'html_report': snakemake.output.get('html_report'),
+        'html_report_standalone': snakemake.output.get('html_report_standalone'),
         'pdf_report': snakemake.output.get('pdf_report')
     }
 

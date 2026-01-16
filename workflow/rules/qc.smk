@@ -720,11 +720,12 @@ rule multiqc:
 
 rule virome_report:
     """
-    Generate user-friendly virome QC report (replaces MultiQC)
+    Generate user-friendly virome QC reports (replaces MultiQC)
 
-    Creates both interactive HTML dashboard and structured JSON data
-    for virome-specific quality assessment with batch-level overview
-    and easy outlier identification.
+    Creates dual HTML outputs for different use cases:
+    - virome_report.html: Lightweight version with external images (~2-3MB)
+    - virome_report_standalone.html: Self-contained with embedded images (~16MB)
+    Plus structured JSON data for virome-specific quality assessment.
     """
     input:
         # QC data sources
@@ -742,6 +743,7 @@ rule virome_report:
         fastqc_files=expand(f"{OUTDIR}/fastqc/final/{{sample}}_R1_fastqc.zip", sample=SAMPLES)
     output:
         html_report=f"{OUTDIR}/reports/virome_report.html",
+        html_report_standalone=f"{OUTDIR}/reports/virome_report_standalone.html",
         json_data=f"{OUTDIR}/reports/virome_report_data.json"
     log:
         f"{OUTDIR}/logs/virome_report.log"

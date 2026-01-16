@@ -165,7 +165,15 @@
                     <div class="card-body text-center">
                         <h3 class="card-title text-primary">{{ batch_statistics.total_samples }}</h3>
                         <p class="card-text">Total Samples</p>
-                        <small class="text-muted">Processed successfully</small>
+                        <small class="text-muted">
+                            {% if batch_statistics.total_samples > 200 %}
+                                Large dataset - outlier-focused visualization
+                            {% elif batch_statistics.total_samples > 50 %}
+                                Medium dataset - top contaminants highlighted
+                            {% else %}
+                                Complete sample visualization
+                            {% endif %}
+                        </small>
                     </div>
                 </div>
 
@@ -360,10 +368,17 @@
             <div class="filter-buttons">
                 <button class="btn btn-outline-primary" id="filter-all">All Samples</button>
                 <button class="btn btn-outline-warning" id="filter-outliers">
-                    Outliers Only
+                    Outliers Only ({{ batch_statistics.outlier_count }})
                     <i class="bi bi-info-circle" data-bs-toggle="tooltip" data-bs-placement="top"
                        data-bs-title="Shows samples with quality scores, contamination levels, or read processing metrics that deviate significantly from the batch median (using IQR statistical method)"></i>
                 </button>
+                {% if batch_statistics.total_samples > 50 %}
+                <button class="btn btn-outline-danger" id="filter-high-contamination">
+                    High Contamination
+                    <i class="bi bi-info-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                       data-bs-title="Shows samples with highest PhiX + vector contamination levels requiring attention"></i>
+                </button>
+                {% endif %}
             </div>
 
             <!-- Sample Table -->
@@ -423,6 +438,20 @@
         <section id="contamination-analysis" class="mb-5">
             <h2 class="section-title">Contamination Analysis</h2>
 
+            <!-- Large Dataset Notification -->
+            {% if batch_statistics.total_samples > 100 %}
+            <div class="alert alert-info" role="alert">
+                <h5><i class="bi bi-info-circle-fill"></i> Large Dataset Visualization Strategy</h5>
+                <p>With <strong>{{ batch_statistics.total_samples }}</strong> samples, contamination plots focus on <strong>outliers and top contaminants</strong> for clarity. Bar charts show the highest contamination samples, while heatmaps display a representative subset including all statistical outliers.</p>
+                <small class="text-muted"><i class="bi bi-lightbulb"></i> <strong>Why:</strong> This approach highlights actionable samples requiring attention while maintaining plot readability and fast loading times.</small>
+            </div>
+            {% elif batch_statistics.total_samples > 50 %}
+            <div class="alert alert-info" role="alert">
+                <h5><i class="bi bi-info-circle-fill"></i> Focused Visualization</h5>
+                <p>With <strong>{{ batch_statistics.total_samples }}</strong> samples, contamination bar charts show the <strong>top 25 highest contamination samples</strong> for better readability. All samples are included in distribution plots and statistical analysis.</p>
+            </div>
+            {% endif %}
+
             <!-- Contamination Distribution -->
             <div class="row mb-3">
                 <div class="col-md-6">
@@ -455,8 +484,10 @@
                             <h5>Contamination Levels by Sample</h5>
                         </div>
                         <div class="card-body">
-                            {% if base64_images.contamination_bars %}
+                            {% if standalone_version and base64_images.contamination_bars %}
                             <img src="{{ base64_images.contamination_bars }}" alt="Contamination Bar Chart" class="img-fluid">
+                            {% elif not standalone_version and image_links.contamination_bars %}
+                            <img src="{{ image_links.contamination_bars }}" alt="Contamination Bar Chart" class="img-fluid">
                             {% else %}
                             <div class="text-center text-muted p-4">Contamination bar chart not available</div>
                             {% endif %}
@@ -473,8 +504,10 @@
                             <h5>Contamination Heatmap</h5>
                         </div>
                         <div class="card-body">
-                            {% if base64_images.contamination_heatmap %}
+                            {% if standalone_version and base64_images.contamination_heatmap %}
                             <img src="{{ base64_images.contamination_heatmap }}" alt="Contamination Heatmap" class="img-fluid">
+                            {% elif not standalone_version and image_links.contamination_heatmap %}
+                            <img src="{{ image_links.contamination_heatmap }}" alt="Contamination Heatmap" class="img-fluid">
                             {% else %}
                             <div class="text-center text-muted p-4">Contamination heatmap not available</div>
                             {% endif %}
@@ -495,8 +528,10 @@
                             </small>
                         </div>
                         <div class="card-body">
-                            {% if base64_images.primer_b_heatmap %}
+                            {% if standalone_version and base64_images.primer_b_heatmap %}
                             <img src="{{ base64_images.primer_b_heatmap }}" alt="Primer B Heatmap" class="img-fluid">
+                            {% elif not standalone_version and image_links.primer_b_heatmap %}
+                            <img src="{{ image_links.primer_b_heatmap }}" alt="Primer B Heatmap" class="img-fluid">
                             {% else %}
                             <div class="text-center text-muted p-4">Primer B heatmap not available</div>
                             {% endif %}
@@ -575,7 +610,24 @@
                     }
                 );
                 table.draw();
-                $('.btn-outline-primary, .btn-outline-warning').removeClass('active');
+                $('.btn-outline-primary, .btn-outline-warning, .btn-outline-danger').removeClass('active');
+                $(this).addClass('active');
+
+                // Remove custom filter after use
+                $.fn.dataTable.ext.search.pop();
+            });
+
+            $('#filter-high-contamination').click(function() {
+                // Filter for samples with high PhiX + Vector contamination (>1%)
+                $.fn.dataTable.ext.search.push(
+                    function(settings, data, dataIndex) {
+                        const sampleData = reportData.samples[dataIndex];
+                        const totalContamination = (sampleData.phix_percent || 0) + (sampleData.vector_percent || 0);
+                        return totalContamination > 1.0;
+                    }
+                );
+                table.draw();
+                $('.btn-outline-primary, .btn-outline-warning, .btn-outline-danger').removeClass('active');
                 $(this).addClass('active');
 
                 // Remove custom filter after use
@@ -891,9 +943,17 @@
     <footer class="mt-5 py-3 border-top">
         <div class="container text-center text-muted">
             <small>
-                Virome QC Report |
+                Virome QC Report
+                {% if standalone_version %}
+                <span class="badge bg-info ms-2">Standalone Version</span>
+                (Self-contained with embedded images for sharing)
+                {% else %}
+                <span class="badge bg-success ms-2">Lightweight Version</span>
+                (External images for fast loading)
+                {% endif %}
+                |
                 <a href="#" data-bs-toggle="modal" data-bs-target="#methodologyModal">Statistical Methods</a> |
-                Generated on {{ current_timestamp }}
+                Generated on {{ timestamp }}
             </small>
         </div>
     </footer>
