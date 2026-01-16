@@ -428,18 +428,16 @@ def main():
     plt.rcParams['grid.color'] = '#E5E5E5'
     plt.rcParams['grid.alpha'] = 0.4
 
-    # Generate plots
+    # Generate plots (only those displayed in HTML report)
     print("\n" + "="*60)
-    print("GENERATING CONTAMINATION PLOTS WITH PROFESSIONAL STYLING")
+    print("GENERATING CONTAMINATION PLOTS FOR HTML REPORT")
     print("="*60 + "\n")
 
     plot_contamination_bars(df, output_prefix)
-    plot_contamination_boxes(df, output_prefix)
-    plot_contamination_scatter(df, output_prefix)
     plot_contamination_heatmap(df, output_prefix)
 
     print("\n" + "="*60)
-    print("CONTAMINATION PLOTS COMPLETE - STYLED TO MATCH rRNA HISTOGRAM")
+    print("CONTAMINATION PLOTS COMPLETE - BAR CHART AND HEATMAP FOR HTML")
     print("="*60 + "\n")
 
 

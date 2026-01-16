@@ -8,7 +8,7 @@ Evaluates samples based on 3 essential quality metrics:
 - Final read count after QC (sequencing depth)
 
 Provides quality categories (Excellent/Good/Concerning/Poor) based on practical
-thresholds rather than binary pass/fail assessments, allowing researchers to make
+thresholds using evidence-based quality categories, allowing researchers to make
 informed decisions about sample usability for their specific analysis goals.
 
 """

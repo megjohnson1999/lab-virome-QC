@@ -612,8 +612,6 @@ rule plot_contamination:
         f"{OUTDIR}/reports/contamination_summary.tsv"
     output:
         f"{OUTDIR}/reports/contamination_bars.png",
-        f"{OUTDIR}/reports/contamination_boxes.png",
-        f"{OUTDIR}/reports/contamination_scatter.png",
         f"{OUTDIR}/reports/contamination_heatmap.png"
     params:
         output_prefix = f"{OUTDIR}/reports/contamination"

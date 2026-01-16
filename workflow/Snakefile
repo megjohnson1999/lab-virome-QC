@@ -132,8 +132,6 @@ def get_final_outputs():
             # Contamination flagging
             f"{OUTDIR}/reports/contamination_summary.tsv",
             f"{OUTDIR}/reports/contamination_bars.png",
-            f"{OUTDIR}/reports/contamination_boxes.png",
-            f"{OUTDIR}/reports/contamination_scatter.png",
             f"{OUTDIR}/reports/contamination_heatmap.png",
             # Primer B cross-contamination analysis
             f"{OUTDIR}/reports/primer_b_contamination_summary.tsv",
@@ -208,8 +206,6 @@ def get_qc_outputs():
             f"{OUTDIR}/reports/contamination_summary.tsv",
             # Contamination plots
             f"{OUTDIR}/reports/contamination_bars.png",
-            f"{OUTDIR}/reports/contamination_boxes.png",
-            f"{OUTDIR}/reports/contamination_scatter.png",
             f"{OUTDIR}/reports/contamination_heatmap.png",
             # Primer B cross-contamination analysis
             f"{OUTDIR}/reports/primer_b_contamination_summary.tsv",
