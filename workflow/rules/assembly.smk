@@ -285,6 +285,9 @@ rule rename_contigs_individual:
     contigs from multiple samples are concatenated.
 
     Example: >contig_1 becomes >sample001contig_1
+
+    Note: Empty assemblies are allowed (creates empty output with warning).
+    This can happen with low-complexity or low-read-count samples.
     """
     input:
         contigs = f"{OUTDIR}/assembly/per_sample/{{sample}}/final.contigs.fa"
@@ -298,16 +301,19 @@ rule rename_contigs_individual:
     shell:
         """
         echo "Renaming contigs with prefix '{wildcards.sample}'" > {log}
-        sed 's/>/>{wildcards.sample}/' {input.contigs} > {output.renamed} 2>> {log}
 
-        # Verify output
-        [ -s {output.renamed} ] || {{ echo "Error: Renamed contigs file is empty" >> {log}; exit 1; }}
-
-        # Log statistics
+        # Check if input has contigs
         ORIGINAL_COUNT=$(grep -c '^>' {input.contigs} || echo 0)
-        RENAMED_COUNT=$(grep -c '^>' {output.renamed} || echo 0)
         echo "Original contigs: $ORIGINAL_COUNT" >> {log}
-        echo "Renamed contigs: $RENAMED_COUNT" >> {log}
+
+        if [ "$ORIGINAL_COUNT" -eq 0 ]; then
+            echo "WARNING: Sample '{wildcards.sample}' has no contigs - creating empty output" >> {log}
+            touch {output.renamed}
+        else
+            sed 's/>/>{wildcards.sample}/' {input.contigs} > {output.renamed} 2>> {log}
+            RENAMED_COUNT=$(grep -c '^>' {output.renamed} || echo 0)
+            echo "Renamed contigs: $RENAMED_COUNT" >> {log}
+        fi
         """
 
 
@@ -319,6 +325,8 @@ rule rename_contigs_custom_groups:
     contigs from multiple groups are concatenated.
 
     Example: >contig_1 becomes >patient_Acontig_1
+
+    Note: Empty assemblies are allowed (creates empty output with warning).
     """
     input:
         contigs = f"{OUTDIR}/assembly/per_group/{{group}}/final.contigs.fa"
@@ -332,16 +340,19 @@ rule rename_contigs_custom_groups:
     shell:
         """
         echo "Renaming contigs with prefix '{wildcards.group}'" > {log}
-        sed 's/>/>{wildcards.group}/' {input.contigs} > {output.renamed} 2>> {log}
 
-        # Verify output
-        [ -s {output.renamed} ] || {{ echo "Error: Renamed contigs file is empty" >> {log}; exit 1; }}
-
-        # Log statistics
+        # Check if input has contigs
         ORIGINAL_COUNT=$(grep -c '^>' {input.contigs} || echo 0)
-        RENAMED_COUNT=$(grep -c '^>' {output.renamed} || echo 0)
         echo "Original contigs: $ORIGINAL_COUNT" >> {log}
-        echo "Renamed contigs: $RENAMED_COUNT" >> {log}
+
+        if [ "$ORIGINAL_COUNT" -eq 0 ]; then
+            echo "WARNING: Group '{wildcards.group}' has no contigs - creating empty output" >> {log}
+            touch {output.renamed}
+        else
+            sed 's/>/>{wildcards.group}/' {input.contigs} > {output.renamed} 2>> {log}
+            RENAMED_COUNT=$(grep -c '^>' {output.renamed} || echo 0)
+            echo "Renamed contigs: $RENAMED_COUNT" >> {log}
+        fi
         """
 
 
