@@ -81,9 +81,12 @@ def get_group_reads_for_merging(wildcards):
     }
 
 
-def get_renamed_contigs_for_concatenation():
+def get_renamed_contigs_for_concatenation(wildcards):
     """
     Get all renamed contig files for concatenation based on assembly strategy.
+
+    Args:
+        wildcards: Snakemake wildcards object (unused but required for input functions)
 
     Returns list of renamed contig file paths.
     """
