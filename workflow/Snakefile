@@ -300,12 +300,12 @@ def get_final_outputs():
             expand(f"{OUTDIR}/bbmerge/{{sample}}_R2_unmerged.fastq.gz", sample=SAMPLES)
         )
 
-        # Final assembly output (same for both strategies - two-stage workflow)
+        # Final assembly output (strategy-specific paths for comparison)
         # The final output is the Flye meta-assembly
         outputs.extend([
-            f"{OUTDIR}/assembly/flye/assembly.fasta",
-            f"{OUTDIR}/assembly/final.contigs.fa",  # Convenience symlink to Flye output
-            f"{OUTDIR}/reports/assembly_stats.tsv"
+            f"{OUTDIR}/assembly/{ASSEMBLY_STRATEGY}/flye/assembly.fasta",
+            f"{OUTDIR}/assembly/{ASSEMBLY_STRATEGY}/final.contigs.fa",  # Convenience symlink to Flye output
+            f"{OUTDIR}/reports/assembly_stats_{ASSEMBLY_STRATEGY}.tsv"
         ])
 
     return outputs
@@ -392,8 +392,8 @@ onsuccess:
         print(f"  - QC reports: {OUTDIR}/reports/")
         print(f"  - Clean reads: {OUTDIR}/clean_reads/")
     if RUN_ASSEMBLY:
-        print(f"  - Final assembly (Flye meta-assembly): {OUTDIR}/assembly/final.contigs.fa")
-        print(f"  - Assembly stats: {OUTDIR}/reports/assembly_stats.tsv")
+        print(f"  - Final assembly (Flye): {OUTDIR}/assembly/{ASSEMBLY_STRATEGY}/final.contigs.fa")
+        print(f"  - Assembly stats: {OUTDIR}/reports/assembly_stats_{ASSEMBLY_STRATEGY}.tsv")
         if ASSEMBLY_STRATEGY == "individual":
             print(f"  - Per-sample MEGAHIT assemblies: {OUTDIR}/assembly/per_sample/*/final.contigs.fa")
         elif ASSEMBLY_STRATEGY == "custom_groups":

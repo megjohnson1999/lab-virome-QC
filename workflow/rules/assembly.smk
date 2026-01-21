@@ -355,13 +355,15 @@ rule concatenate_all_contigs:
 
     Combines all renamed contig files (from individual samples or groups)
     into a single file for the Flye meta-assembly step.
+
+    Output is strategy-specific to allow comparison between strategies.
     """
     input:
         get_renamed_contigs_for_concatenation
     output:
-        concatenated = f"{OUTDIR}/assembly/concatenated_contigs.fa"
+        concatenated = f"{OUTDIR}/assembly/{ASSEMBLY_STRATEGY}/concatenated_contigs.fa"
     log:
-        f"{OUTDIR}/logs/assembly/concatenate_contigs.log"
+        f"{OUTDIR}/logs/assembly/{ASSEMBLY_STRATEGY}/concatenate_contigs.log"
     threads: 4
     resources:
         mem_mb = 8000
@@ -399,17 +401,19 @@ rule flye_meta_assembly:
     - --plasmids: Include plasmid detection (important for viromes)
     - -g 1g: Estimated genome size (1 Gbp placeholder for metagenomes)
 
+    Output is strategy-specific to allow comparison between strategies.
+
     Resources: 16-24 threads, 64-100GB memory, 24-hour time limit
     """
     input:
-        contigs = f"{OUTDIR}/assembly/concatenated_contigs.fa"
+        contigs = f"{OUTDIR}/assembly/{ASSEMBLY_STRATEGY}/concatenated_contigs.fa"
     output:
-        assembly = f"{OUTDIR}/assembly/flye/assembly.fasta",
-        info = f"{OUTDIR}/assembly/flye/assembly_info.txt"
+        assembly = f"{OUTDIR}/assembly/{ASSEMBLY_STRATEGY}/flye/assembly.fasta",
+        info = f"{OUTDIR}/assembly/{ASSEMBLY_STRATEGY}/flye/assembly_info.txt"
     params:
-        out_dir = f"{OUTDIR}/assembly/flye"
+        out_dir = f"{OUTDIR}/assembly/{ASSEMBLY_STRATEGY}/flye"
     log:
-        f"{OUTDIR}/logs/assembly/flye_meta.log"
+        f"{OUTDIR}/logs/assembly/{ASSEMBLY_STRATEGY}/flye_meta.log"
     threads: 24
     resources:
         mem_mb = 100000,  # 100GB
@@ -454,11 +458,13 @@ rule link_final_assembly:
 
     Makes the final assembly easily accessible at a standard location for
     downstream pipelines (e.g., phage-analysis pipeline).
+
+    Output is strategy-specific to allow comparison between strategies.
     """
     input:
-        f"{OUTDIR}/assembly/flye/assembly.fasta"
+        f"{OUTDIR}/assembly/{ASSEMBLY_STRATEGY}/flye/assembly.fasta"
     output:
-        f"{OUTDIR}/assembly/final.contigs.fa"
+        f"{OUTDIR}/assembly/{ASSEMBLY_STRATEGY}/final.contigs.fa"
     shell:
         """
         ln -sf flye/assembly.fasta {output}
@@ -481,21 +487,23 @@ rule assembly_stats:
     - GC content
 
     Also includes per-sample/per-group MEGAHIT stats for comparison.
+
+    Output is strategy-specific to allow comparison between strategies.
     """
     input:
-        flye_assembly = f"{OUTDIR}/assembly/flye/assembly.fasta",
-        flye_info = f"{OUTDIR}/assembly/flye/assembly_info.txt",
+        flye_assembly = f"{OUTDIR}/assembly/{ASSEMBLY_STRATEGY}/flye/assembly.fasta",
+        flye_info = f"{OUTDIR}/assembly/{ASSEMBLY_STRATEGY}/flye/assembly_info.txt",
         megahit_contigs = (
             expand(f"{OUTDIR}/assembly/per_sample/{{sample}}/final.contigs.fa", sample=SAMPLES)
             if config["pipeline"].get("assembly_strategy", "individual") == "individual"
             else expand(f"{OUTDIR}/assembly/per_group/{{group}}/final.contigs.fa", group=GROUP_IDS)
         )
     output:
-        stats = f"{OUTDIR}/reports/assembly_stats.tsv"
+        stats = f"{OUTDIR}/reports/assembly_stats_{ASSEMBLY_STRATEGY}.tsv"
     params:
         strategy = config["pipeline"].get("assembly_strategy", "individual")
     log:
-        f"{OUTDIR}/logs/assembly/assembly_stats.log"
+        f"{OUTDIR}/logs/assembly/{ASSEMBLY_STRATEGY}/assembly_stats.log"
     conda:
         "../envs/qc.yaml"
     script:
