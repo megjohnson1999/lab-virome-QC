@@ -1,17 +1,24 @@
 """
-Assembly Module
-===============
+Assembly Module - Two-Stage Workflow
+=====================================
 
-Assembly rules for virome contigs.
+Two-stage assembly workflow for virome contigs based on validated research
+showing that global coassembly performs poorly. This workflow supports:
+- Individual assembly (default): One MEGAHIT assembly per sample
+- Custom groups: One MEGAHIT assembly per user-defined group
 
-Workflow:
+Workflow (same for both strategies):
 1. Merge overlapping read pairs (bbmerge)
-2. Concatenate all samples for coassembly OR assemble individually
-3. Assemble using MEGAHIT
-4. Filter and validate contigs
+2. Stage 1: MEGAHIT assemblies (per-sample or per-group)
+3. Stage 2: Rename contigs with unique IDs (sample/group prefix)
+4. Stage 3: Concatenate all renamed contigs
+5. Stage 4: Flye meta-assembly for final polished assembly
+
+NOTE: Global coassembly has been removed - research shows it performs worst
+on all assembly metrics. Use 'individual' or 'custom_groups' instead.
 
 Input: Cleaned paired-end reads (from QC module or user-provided)
-Output: Assembled contigs + assembly stats
+Output: Final Flye meta-assembled contigs + assembly stats
 """
 
 # ================================================================================
@@ -48,6 +55,52 @@ def get_reads_for_merging(wildcards):
             f"Invalid start_from value: '{start_from}'. "
             f"Must be 'raw_reads' or 'cleaned_reads'"
         )
+
+
+def get_group_reads_for_merging(wildcards):
+    """
+    Get reads for all samples in a group (for custom_groups strategy).
+
+    Returns dict with lists of R1/R2 files for all samples in the group.
+    """
+    group_id = wildcards.group
+    group_samples = GROUPS_TO_SAMPLES.get(group_id, [])
+
+    start_from = config["pipeline"].get("start_from", "raw_reads")
+
+    if start_from == "raw_reads":
+        base_dir = f"{OUTDIR}/rrna_removed"
+    elif start_from == "cleaned_reads":
+        base_dir = config["pipeline"].get("cleaned_reads_dir")
+    else:
+        raise ValueError(f"Invalid start_from value: '{start_from}'")
+
+    return {
+        "r1": [f"{base_dir}/{sample}_R1.fastq.gz" for sample in group_samples],
+        "r2": [f"{base_dir}/{sample}_R2.fastq.gz" for sample in group_samples]
+    }
+
+
+def get_renamed_contigs_for_concatenation():
+    """
+    Get all renamed contig files for concatenation based on assembly strategy.
+
+    Returns list of renamed contig file paths.
+    """
+    strategy = config["pipeline"].get("assembly_strategy", "individual")
+
+    if strategy == "individual":
+        return expand(
+            f"{OUTDIR}/assembly/per_sample/{{sample}}/renamed.contigs.fa",
+            sample=SAMPLES
+        )
+    elif strategy == "custom_groups":
+        return expand(
+            f"{OUTDIR}/assembly/per_group/{{group}}/renamed.contigs.fa",
+            group=GROUP_IDS
+        )
+    else:
+        raise ValueError(f"Unknown assembly strategy: {strategy}")
 
 
 # ================================================================================
@@ -107,161 +160,16 @@ rule bbmerge:
 
 
 # ================================================================================
-# Concatenation for Coassembly
+# Stage 1: MEGAHIT Assemblies
 # ================================================================================
-
-rule concatenate_merged_reads:
-    """Concatenate all merged reads for coassembly"""
-    input:
-        expand(f"{OUTDIR}/bbmerge/{{sample}}_merged.fastq.gz", sample=SAMPLES)
-    output:
-        f"{OUTDIR}/assembly/all_merged.fastq.gz"
-    log:
-        f"{OUTDIR}/logs/assembly/concat_merged.log"
-    threads: 4
-    conda:
-        "../envs/bbtools.yaml"
-    shell:
-        """
-        # Validate input files first
-        echo "Checking input file integrity before concatenation..." > {log}
-        for file in {input}; do
-            gzip -t "$file" || {{ echo "❌ Error: File $file failed integrity check" >> {log}; exit 1; }}
-        done
-        echo "✅ All input files passed integrity check" >> {log}
-
-        # Concatenate using zcat and gzip
-        echo "Starting concatenation with zcat..." >> {log}
-        zcat {input} | gzip -c > {output} 2>> {log}
-
-        # Verify output file
-        echo "Verifying output file integrity..." >> {log}
-        gzip -t {output} && echo "✅ Output file integrity verified" >> {log} || {{ echo "❌ Output file corrupted" >> {log}; exit 1; }}
-        """
-
-
-rule concatenate_unmerged_r1:
-    """Concatenate all unmerged R1 reads for coassembly"""
-    input:
-        expand(f"{OUTDIR}/bbmerge/{{sample}}_R1_unmerged.fastq.gz", sample=SAMPLES)
-    output:
-        f"{OUTDIR}/assembly/all_unmerged_R1.fastq.gz"
-    log:
-        f"{OUTDIR}/logs/assembly/concat_r1.log"
-    threads: 4
-    conda:
-        "../envs/bbtools.yaml"
-    shell:
-        """
-        # Validate input files first
-        echo "Checking input file integrity before concatenation..." > {log}
-        for file in {input}; do
-            gzip -t "$file" || {{ echo "❌ Error: File $file failed integrity check" >> {log}; exit 1; }}
-        done
-        echo "✅ All input files passed integrity check" >> {log}
-
-        # Concatenate using zcat and gzip
-        echo "Starting concatenation with zcat..." >> {log}
-        zcat {input} | gzip -c > {output} 2>> {log}
-
-        # Verify output file
-        echo "Verifying output file integrity..." >> {log}
-        gzip -t {output} && echo "✅ Output file integrity verified" >> {log} || {{ echo "❌ Output file corrupted" >> {log}; exit 1; }}
-        """
-
-
-rule concatenate_unmerged_r2:
-    """Concatenate all unmerged R2 reads for coassembly"""
-    input:
-        expand(f"{OUTDIR}/bbmerge/{{sample}}_R2_unmerged.fastq.gz", sample=SAMPLES)
-    output:
-        f"{OUTDIR}/assembly/all_unmerged_R2.fastq.gz"
-    log:
-        f"{OUTDIR}/logs/assembly/concat_r2.log"
-    threads: 4
-    conda:
-        "../envs/bbtools.yaml"
-    shell:
-        """
-        # Validate input files first
-        echo "Checking input file integrity before concatenation..." > {log}
-        for file in {input}; do
-            gzip -t "$file" || {{ echo "❌ Error: File $file failed integrity check" >> {log}; exit 1; }}
-        done
-        echo "✅ All input files passed integrity check" >> {log}
-
-        # Concatenate using zcat and gzip
-        echo "Starting concatenation with zcat..." >> {log}
-        zcat {input} | gzip -c > {output} 2>> {log}
-
-        # Verify output file
-        echo "Verifying output file integrity..." >> {log}
-        gzip -t {output} && echo "✅ Output file integrity verified" >> {log} || {{ echo "❌ Output file corrupted" >> {log}; exit 1; }}
-        """
-
-
-# ================================================================================
-# Assembly with MEGAHIT
-# ================================================================================
-
-rule megahit_coassembly:
-    """
-    Coassembly of all samples using MEGAHIT
-
-    Combines all merged (single-end) and unmerged (paired-end) reads into a
-    single assembly. This is recommended for virome studies to:
-    - Increase coverage of low-abundance viruses
-    - Enable strain-level resolution across samples
-    - Reduce computational cost vs per-sample assembly
-
-    Uses MEGAHIT's default k-mer list optimized for metagenomes.
-    """
-    input:
-        merged = f"{OUTDIR}/assembly/all_merged.fastq.gz",
-        r1 = f"{OUTDIR}/assembly/all_unmerged_R1.fastq.gz",
-        r2 = f"{OUTDIR}/assembly/all_unmerged_R2.fastq.gz"
-    output:
-        contigs = f"{OUTDIR}/assembly/megahit/final.contigs.fa",
-        done = touch(f"{OUTDIR}/assembly/megahit/.done")
-    params:
-        out_dir = f"{OUTDIR}/assembly/megahit",
-        min_contig = config.get("assembly", {}).get("min_contig_length", 1000)
-    log:
-        f"{OUTDIR}/logs/assembly/megahit.log"
-    threads: 24
-    resources:
-        mem_mb = 100000  # 100GB for large coassemblies
-    conda:
-        "../envs/megahit.yaml"
-    shell:
-        """
-        # Remove output directory if it exists (megahit won't overwrite)
-        rm -rf {params.out_dir}
-
-        # Run megahit
-        megahit \
-            -r {input.merged} \
-            -1 {input.r1} \
-            -2 {input.r2} \
-            -o {params.out_dir} \
-            --min-contig-len {params.min_contig} \
-            --k-list 21,29,39,59,79,99,119,141 \
-            -t {threads} \
-            &> {log}
-
-        # Verify output
-        [ -f {output.contigs} ] || {{ echo "Error: Assembly failed" >> {log}; exit 1; }}
-        """
-
 
 rule megahit_individual:
     """
-    Individual sample assembly using MEGAHIT
+    Individual sample assembly using MEGAHIT (Stage 1 of two-stage workflow)
 
-    Assembles each sample separately. Use this when:
-    - Samples are from different conditions/timepoints
-    - You need sample-specific strain resolution
-    - Coassembly is too memory-intensive
+    Assembles each sample separately. This is the default strategy and works
+    well for most virome studies. The individual assemblies are then renamed
+    and combined via Flye meta-assembly.
     """
     input:
         merged = f"{OUTDIR}/bbmerge/{{sample}}_merged.fastq.gz",
@@ -301,24 +209,256 @@ rule megahit_individual:
         """
 
 
+rule megahit_custom_groups:
+    """
+    Group-based assembly using MEGAHIT (Stage 1 of two-stage workflow)
+
+    Assembles all samples within a user-defined group together. Use this when
+    samples are biologically related (e.g., same patient, same treatment).
+
+    Groups are defined in a TSV file specified by pipeline.groups_file.
+    """
+    input:
+        merged = lambda wc: expand(
+            f"{OUTDIR}/bbmerge/{{sample}}_merged.fastq.gz",
+            sample=GROUPS_TO_SAMPLES.get(wc.group, [])
+        ),
+        r1 = lambda wc: expand(
+            f"{OUTDIR}/bbmerge/{{sample}}_R1_unmerged.fastq.gz",
+            sample=GROUPS_TO_SAMPLES.get(wc.group, [])
+        ),
+        r2 = lambda wc: expand(
+            f"{OUTDIR}/bbmerge/{{sample}}_R2_unmerged.fastq.gz",
+            sample=GROUPS_TO_SAMPLES.get(wc.group, [])
+        )
+    output:
+        contigs = f"{OUTDIR}/assembly/per_group/{{group}}/final.contigs.fa",
+        done = touch(f"{OUTDIR}/assembly/per_group/{{group}}/.done")
+    params:
+        out_dir = f"{OUTDIR}/assembly/per_group/{{group}}",
+        min_contig = config.get("assembly", {}).get("min_contig_length", 1000)
+    log:
+        f"{OUTDIR}/logs/assembly/megahit_group_{{group}}.log"
+    threads: 24
+    resources:
+        mem_mb = 100000  # 100GB for group assemblies
+    conda:
+        "../envs/megahit.yaml"
+    shell:
+        """
+        # Remove output directory if it exists
+        rm -rf {params.out_dir}
+
+        # Create comma-separated file lists for MEGAHIT
+        MERGED=$(echo {input.merged} | tr ' ' ',')
+        R1=$(echo {input.r1} | tr ' ' ',')
+        R2=$(echo {input.r2} | tr ' ' ',')
+
+        # Run megahit with multiple input files
+        megahit \
+            -r $MERGED \
+            -1 $R1 \
+            -2 $R2 \
+            -o {params.out_dir} \
+            --min-contig-len {params.min_contig} \
+            --k-list 21,29,39,59,79,99,119,141 \
+            -t {threads} \
+            &> {log}
+
+        # Verify output
+        [ -f {output.contigs} ] || {{ echo "Error: Assembly failed" >> {log}; exit 1; }}
+        """
+
+
+# ================================================================================
+# Stage 2: Rename Contigs with Unique IDs
+# ================================================================================
+
+rule rename_contigs_individual:
+    """
+    Rename contigs with sample-specific prefixes (Stage 2 of two-stage workflow)
+
+    Adds sample name prefix to all contig headers to ensure unique IDs when
+    contigs from multiple samples are concatenated.
+
+    Example: >contig_1 becomes >sample001contig_1
+    """
+    input:
+        contigs = f"{OUTDIR}/assembly/per_sample/{{sample}}/final.contigs.fa"
+    output:
+        renamed = f"{OUTDIR}/assembly/per_sample/{{sample}}/renamed.contigs.fa"
+    log:
+        f"{OUTDIR}/logs/assembly/rename_contigs_{{sample}}.log"
+    threads: 2
+    resources:
+        mem_mb = 8000
+    shell:
+        """
+        echo "Renaming contigs with prefix '{wildcards.sample}'" > {log}
+        sed 's/>/>{wildcards.sample}/' {input.contigs} > {output.renamed} 2>> {log}
+
+        # Verify output
+        [ -s {output.renamed} ] || {{ echo "Error: Renamed contigs file is empty" >> {log}; exit 1; }}
+
+        # Log statistics
+        ORIGINAL_COUNT=$(grep -c '^>' {input.contigs} || echo 0)
+        RENAMED_COUNT=$(grep -c '^>' {output.renamed} || echo 0)
+        echo "Original contigs: $ORIGINAL_COUNT" >> {log}
+        echo "Renamed contigs: $RENAMED_COUNT" >> {log}
+        """
+
+
+rule rename_contigs_custom_groups:
+    """
+    Rename contigs with group-specific prefixes (Stage 2 of two-stage workflow)
+
+    Adds group name prefix to all contig headers to ensure unique IDs when
+    contigs from multiple groups are concatenated.
+
+    Example: >contig_1 becomes >patient_Acontig_1
+    """
+    input:
+        contigs = f"{OUTDIR}/assembly/per_group/{{group}}/final.contigs.fa"
+    output:
+        renamed = f"{OUTDIR}/assembly/per_group/{{group}}/renamed.contigs.fa"
+    log:
+        f"{OUTDIR}/logs/assembly/rename_contigs_group_{{group}}.log"
+    threads: 2
+    resources:
+        mem_mb = 8000
+    shell:
+        """
+        echo "Renaming contigs with prefix '{wildcards.group}'" > {log}
+        sed 's/>/>{wildcards.group}/' {input.contigs} > {output.renamed} 2>> {log}
+
+        # Verify output
+        [ -s {output.renamed} ] || {{ echo "Error: Renamed contigs file is empty" >> {log}; exit 1; }}
+
+        # Log statistics
+        ORIGINAL_COUNT=$(grep -c '^>' {input.contigs} || echo 0)
+        RENAMED_COUNT=$(grep -c '^>' {output.renamed} || echo 0)
+        echo "Original contigs: $ORIGINAL_COUNT" >> {log}
+        echo "Renamed contigs: $RENAMED_COUNT" >> {log}
+        """
+
+
+# ================================================================================
+# Stage 3: Concatenate Renamed Contigs
+# ================================================================================
+
+rule concatenate_all_contigs:
+    """
+    Concatenate all renamed contigs for Flye meta-assembly (Stage 3)
+
+    Combines all renamed contig files (from individual samples or groups)
+    into a single file for the Flye meta-assembly step.
+    """
+    input:
+        get_renamed_contigs_for_concatenation
+    output:
+        concatenated = f"{OUTDIR}/assembly/concatenated_contigs.fa"
+    log:
+        f"{OUTDIR}/logs/assembly/concatenate_contigs.log"
+    threads: 4
+    resources:
+        mem_mb = 8000
+    shell:
+        """
+        echo "Concatenating renamed contigs from {input}" > {log}
+
+        # Concatenate all input files
+        cat {input} > {output.concatenated} 2>> {log}
+
+        # Verify output
+        [ -s {output.concatenated} ] || {{ echo "Error: Concatenated file is empty" >> {log}; exit 1; }}
+
+        # Log statistics
+        TOTAL_CONTIGS=$(grep -c '^>' {output.concatenated} || echo 0)
+        TOTAL_SIZE=$(stat -f%z {output.concatenated} 2>/dev/null || stat --printf="%s" {output.concatenated})
+        echo "Total concatenated contigs: $TOTAL_CONTIGS" >> {log}
+        echo "Total file size: $TOTAL_SIZE bytes" >> {log}
+        """
+
+
+# ================================================================================
+# Stage 4: Flye Meta-Assembly
+# ================================================================================
+
+rule flye_meta_assembly:
+    """
+    Final meta-assembly using Flye (Stage 4 of two-stage workflow)
+
+    Uses Flye's --subassemblies mode to polish and combine the concatenated
+    contigs from all samples/groups into a final high-quality assembly.
+
+    Parameters are based on the validated hecatomb approach:
+    - --subassemblies: Input mode for pre-assembled contigs
+    - --plasmids: Include plasmid detection (important for viromes)
+    - -g 1g: Estimated genome size (1 Gbp placeholder for metagenomes)
+
+    Resources: 16-24 threads, 64-100GB memory, 24-hour time limit
+    """
+    input:
+        contigs = f"{OUTDIR}/assembly/concatenated_contigs.fa"
+    output:
+        assembly = f"{OUTDIR}/assembly/flye/assembly.fasta",
+        info = f"{OUTDIR}/assembly/flye/assembly_info.txt"
+    params:
+        out_dir = f"{OUTDIR}/assembly/flye"
+    log:
+        f"{OUTDIR}/logs/assembly/flye_meta.log"
+    threads: 24
+    resources:
+        mem_mb = 100000,  # 100GB
+        time_min = 1440   # 24 hours
+    conda:
+        "../envs/flye.yaml"
+    shell:
+        """
+        echo "Starting Flye meta-assembly" > {log}
+        echo "Input contigs: {input.contigs}" >> {log}
+        echo "Output directory: {params.out_dir}" >> {log}
+
+        # Remove output directory if it exists (Flye won't overwrite)
+        rm -rf {params.out_dir}
+
+        # Run Flye in subassemblies mode
+        # Parameters from validated hecatomb approach
+        flye --subassemblies {input.contigs} \
+             -t {threads} \
+             --plasmids \
+             -o {params.out_dir} \
+             -g 1g \
+             2>&1 | tee -a {log}
+
+        # Verify outputs
+        [ -f {output.assembly} ] || {{ echo "Error: Flye assembly failed - no output" >> {log}; exit 1; }}
+        [ -f {output.info} ] || {{ echo "Warning: Assembly info file not found" >> {log}; }}
+
+        # Log statistics
+        CONTIG_COUNT=$(grep -c '^>' {output.assembly} || echo 0)
+        echo "Final assembly contig count: $CONTIG_COUNT" >> {log}
+        """
+
+
 # ================================================================================
 # Create Convenience Symlinks
 # ================================================================================
 
-rule link_coassembly:
+rule link_final_assembly:
     """
-    Create convenience symlink for coassembly output
+    Create convenience symlink for final Flye assembly output
 
-    Makes the coassembly easily accessible at a standard location for
+    Makes the final assembly easily accessible at a standard location for
     downstream pipelines (e.g., phage-analysis pipeline).
     """
     input:
-        f"{OUTDIR}/assembly/megahit/final.contigs.fa"
+        f"{OUTDIR}/assembly/flye/assembly.fasta"
     output:
         f"{OUTDIR}/assembly/final.contigs.fa"
     shell:
         """
-        ln -sf megahit/final.contigs.fa {output}
+        ln -sf flye/assembly.fasta {output}
         """
 
 
@@ -330,18 +470,29 @@ rule assembly_stats:
     """
     Calculate assembly statistics
 
-    Metrics:
+    Metrics calculated for the final Flye assembly:
     - Number of contigs
     - Total assembly size
     - N50, L50
     - Longest contig
     - GC content
+
+    Also includes per-sample/per-group MEGAHIT stats for comparison.
     """
     input:
-        contigs = f"{OUTDIR}/assembly/megahit/final.contigs.fa" if config["pipeline"].get("assembly_strategy", "coassembly") == "coassembly"
-                  else expand(f"{OUTDIR}/assembly/per_sample/{{sample}}/final.contigs.fa", sample=SAMPLES)
+        flye_assembly = f"{OUTDIR}/assembly/flye/assembly.fasta",
+        flye_info = f"{OUTDIR}/assembly/flye/assembly_info.txt",
+        megahit_contigs = (
+            expand(f"{OUTDIR}/assembly/per_sample/{{sample}}/final.contigs.fa", sample=SAMPLES)
+            if config["pipeline"].get("assembly_strategy", "individual") == "individual"
+            else expand(f"{OUTDIR}/assembly/per_group/{{group}}/final.contigs.fa", group=GROUP_IDS)
+        )
     output:
         stats = f"{OUTDIR}/reports/assembly_stats.tsv"
+    params:
+        strategy = config["pipeline"].get("assembly_strategy", "individual")
+    log:
+        f"{OUTDIR}/logs/assembly/assembly_stats.log"
     conda:
         "../envs/qc.yaml"
     script:

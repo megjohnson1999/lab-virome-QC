@@ -23,9 +23,26 @@ pipeline:
   run_assembly: false
 
   # Assembly strategy (only used if run_assembly=true)
-  # "coassembly": Combine all samples into one assembly (recommended for viromes)
-  # "individual": Assemble each sample separately
-  assembly_strategy: "coassembly"
+  # Both strategies use a two-stage workflow: MEGAHIT -> Flye meta-assembly
+  #
+  # "individual": Assemble each sample separately with MEGAHIT, then combine
+  #               all contigs via Flye meta-assembly (default, recommended)
+  # "custom_groups": Assemble user-defined groups with MEGAHIT, then combine
+  #                  all group contigs via Flye meta-assembly
+  #
+  # NOTE: Global "coassembly" has been removed - research shows it performs
+  # worst on all metrics. Use "individual" or "custom_groups" instead.
+  assembly_strategy: "individual"
+
+  # Groups file (required if assembly_strategy="custom_groups")
+  # TSV file with exactly 2 columns: sample_id and group_id
+  # Example:
+  #   sample001    patient_A
+  #   sample002    patient_A
+  #   sample003    patient_B
+  #   sample004    patient_B
+  # See config/examples/sample_groups.tsv for a template
+  groups_file: null
 
   # If start_from="cleaned_reads", specify directory containing cleaned reads
   # Format: {sample}_R1.fastq.gz and {sample}_R2.fastq.gz
