@@ -4,18 +4,17 @@ Assembly Module - Two-Stage Workflow
 
 Two-stage assembly workflow for virome contigs based on validated research
 showing that global coassembly performs poorly. This workflow supports:
-- Individual assembly (default): One MEGAHIT assembly per sample
-- Custom groups: One MEGAHIT assembly per user-defined group
+- by_sample (default): One MEGAHIT assembly per sample
+- by_group: One MEGAHIT assembly per user-defined group
 
 Workflow (same for both strategies):
-1. Merge overlapping read pairs (bbmerge)
-2. Stage 1: MEGAHIT assemblies (per-sample or per-group)
-3. Stage 2: Rename contigs with unique IDs (sample/group prefix)
-4. Stage 3: Concatenate all renamed contigs
-5. Stage 4: Flye meta-assembly for final polished assembly
+1. Stage 1: MEGAHIT assemblies (per-sample or per-group)
+2. Stage 2: Rename contigs with unique IDs (sample/group prefix)
+3. Stage 3: Concatenate all renamed contigs
+4. Stage 4: Flye meta-assembly for final polished assembly
 
 NOTE: Global coassembly has been removed - research shows it performs worst
-on all assembly metrics. Use 'individual' or 'custom_groups' instead.
+on all assembly metrics. Use 'by_sample' or 'by_group' instead.
 
 Input: Cleaned paired-end reads (from QC module or user-provided)
 Output: Final Flye meta-assembled contigs + assembly stats
@@ -25,9 +24,9 @@ Output: Final Flye meta-assembled contigs + assembly stats
 # Helper Functions for Entry Point Logic
 # ================================================================================
 
-def get_reads_for_merging(wildcards):
+def get_reads_for_assembly(wildcards):
     """
-    Get cleaned reads for bbmerge based on pipeline entry point.
+    Get cleaned reads for assembly based on pipeline entry point.
 
     Returns paths to R1/R2 files depending on where pipeline starts.
     """
@@ -57,9 +56,9 @@ def get_reads_for_merging(wildcards):
         )
 
 
-def get_group_reads_for_merging(wildcards):
+def get_group_reads_for_assembly(wildcards):
     """
-    Get reads for all samples in a group (for custom_groups strategy).
+    Get reads for all samples in a group (for by_group strategy).
 
     Returns dict with lists of R1/R2 files for all samples in the group.
     """
@@ -90,76 +89,20 @@ def get_renamed_contigs_for_concatenation(wildcards):
 
     Returns list of renamed contig file paths.
     """
-    strategy = config["pipeline"].get("assembly_strategy", "individual")
+    strategy = config["pipeline"].get("assembly_strategy", "by_sample")
 
-    if strategy == "individual":
+    if strategy == "by_sample":
         return expand(
             f"{OUTDIR}/assembly/per_sample/{{sample}}/renamed.contigs.fa",
             sample=SAMPLES
         )
-    elif strategy == "custom_groups":
+    elif strategy == "by_group":
         return expand(
             f"{OUTDIR}/assembly/per_group/{{group}}/renamed.contigs.fa",
             group=GROUP_IDS
         )
     else:
         raise ValueError(f"Unknown assembly strategy: {strategy}")
-
-
-# ================================================================================
-# Read Merging with BBMerge
-# ================================================================================
-
-rule bbmerge:
-    """
-    Merge overlapping read pairs using BBMerge
-
-    For short-insert libraries (common in viral metagenomics), many read pairs
-    overlap and can be merged into single longer reads. This improves assembly
-    quality and simplifies downstream analysis.
-
-    Outputs:
-    - merged: Successfully merged reads (single-end)
-    - unmerged_r1/r2: Read pairs that couldn't be merged (paired-end)
-    - hist: Insert size histogram for QC
-    """
-    input:
-        unpack(get_reads_for_merging)
-    output:
-        merged = f"{OUTDIR}/bbmerge/{{sample}}_merged.fastq.gz",
-        unmerged1 = f"{OUTDIR}/bbmerge/{{sample}}_R1_unmerged.fastq.gz",
-        unmerged2 = f"{OUTDIR}/bbmerge/{{sample}}_R2_unmerged.fastq.gz",
-        hist = f"{OUTDIR}/bbmerge/{{sample}}_hist.txt"
-    log:
-        f"{OUTDIR}/logs/bbmerge/{{sample}}.log"
-    threads: 8
-    resources:
-        mem_mb = 16000
-    conda:
-        "../envs/bbtools.yaml"
-    shell:
-        """
-        # Validate input files
-        [ -s {input.r1} ] || {{ echo "Error: R1 file missing or empty" >> {log}; exit 1; }}
-        [ -s {input.r2} ] || {{ echo "Error: R2 file missing or empty" >> {log}; exit 1; }}
-
-        # Run bbmerge
-        bbmerge.sh \
-            in1={input.r1} \
-            in2={input.r2} \
-            out={output.merged} \
-            outu1={output.unmerged1} \
-            outu2={output.unmerged2} \
-            ihist={output.hist} \
-            threads={threads} \
-            -Xmx{resources.mem_mb}m \
-            2>&1 | tee {log}
-
-        # Verify outputs
-        gzip -t {output.merged} || {{ echo "Error: Merged output corrupted" >> {log}; exit 1; }}
-        gzip -t {output.unmerged1} || {{ echo "Error: Unmerged R1 corrupted" >> {log}; exit 1; }}
-        gzip -t {output.unmerged2} || {{ echo "Error: Unmerged R2 corrupted" >> {log}; exit 1; }}
-        """
 
 
 # ================================================================================
@@ -170,14 +113,12 @@ rule megahit_individual:
     """
     Individual sample assembly using MEGAHIT (Stage 1 of two-stage workflow)
 
-    Assembles each sample separately. This is the default strategy and works
-    well for most virome studies. The individual assemblies are then renamed
-    and combined via Flye meta-assembly.
+    Assembles each sample separately using paired-end reads directly.
+    This is the default strategy and works well for most virome studies.
+    The individual assemblies are then renamed and combined via Flye meta-assembly.
     """
     input:
-        merged = f"{OUTDIR}/bbmerge/{{sample}}_merged.fastq.gz",
-        r1 = f"{OUTDIR}/bbmerge/{{sample}}_R1_unmerged.fastq.gz",
-        r2 = f"{OUTDIR}/bbmerge/{{sample}}_R2_unmerged.fastq.gz"
+        unpack(get_reads_for_assembly)
     output:
         contigs = f"{OUTDIR}/assembly/per_sample/{{sample}}/final.contigs.fa",
         done = touch(f"{OUTDIR}/assembly/per_sample/{{sample}}/.done")
@@ -196,9 +137,8 @@ rule megahit_individual:
         # Remove output directory if it exists
         rm -rf {params.out_dir}
 
-        # Run megahit
+        # Run megahit with paired-end reads
         megahit \
-            -r {input.merged} \
             -1 {input.r1} \
             -2 {input.r2} \
             -o {params.out_dir} \
@@ -216,24 +156,14 @@ rule megahit_custom_groups:
     """
     Group-based assembly using MEGAHIT (Stage 1 of two-stage workflow)
 
-    Assembles all samples within a user-defined group together. Use this when
-    samples are biologically related (e.g., same patient, same treatment).
+    Assembles all samples within a user-defined group together using paired-end
+    reads directly. Use this when samples are biologically related (e.g., same
+    patient, same treatment).
 
     Groups are defined in a TSV file specified by pipeline.groups_file.
     """
     input:
-        merged = lambda wc: expand(
-            f"{OUTDIR}/bbmerge/{{sample}}_merged.fastq.gz",
-            sample=GROUPS_TO_SAMPLES.get(wc.group, [])
-        ),
-        r1 = lambda wc: expand(
-            f"{OUTDIR}/bbmerge/{{sample}}_R1_unmerged.fastq.gz",
-            sample=GROUPS_TO_SAMPLES.get(wc.group, [])
-        ),
-        r2 = lambda wc: expand(
-            f"{OUTDIR}/bbmerge/{{sample}}_R2_unmerged.fastq.gz",
-            sample=GROUPS_TO_SAMPLES.get(wc.group, [])
-        )
+        unpack(get_group_reads_for_assembly)
     output:
         contigs = f"{OUTDIR}/assembly/per_group/{{group}}/final.contigs.fa",
         done = touch(f"{OUTDIR}/assembly/per_group/{{group}}/.done")
@@ -253,13 +183,11 @@ rule megahit_custom_groups:
         rm -rf {params.out_dir}
 
         # Create comma-separated file lists for MEGAHIT
-        MERGED=$(echo {input.merged} | tr ' ' ',')
         R1=$(echo {input.r1} | tr ' ' ',')
         R2=$(echo {input.r2} | tr ' ' ',')
 
-        # Run megahit with multiple input files
+        # Run megahit with multiple paired-end input files
         megahit \
-            -r $MERGED \
             -1 $R1 \
             -2 $R2 \
             -o {params.out_dir} \
@@ -506,7 +434,7 @@ rule assembly_stats:
         flye_info = f"{OUTDIR}/assembly/{ASSEMBLY_STRATEGY}/flye/assembly_info.txt",
         megahit_contigs = (
             expand(f"{OUTDIR}/assembly/per_sample/{{sample}}/final.contigs.fa", sample=SAMPLES)
-            if config["pipeline"].get("assembly_strategy", "individual") == "individual"
+            if config["pipeline"].get("assembly_strategy", "by_sample") == "by_sample"
             else expand(f"{OUTDIR}/assembly/per_group/{{group}}/final.contigs.fa", group=GROUP_IDS)
         )
     output:
