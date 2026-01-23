@@ -44,7 +44,7 @@ REFERENCES = config["references"]
 PIPELINE_CONFIG = config.get("pipeline", {})
 START_FROM = PIPELINE_CONFIG.get("start_from", "raw_reads")
 RUN_ASSEMBLY = PIPELINE_CONFIG.get("run_assembly", False)
-ASSEMBLY_STRATEGY = PIPELINE_CONFIG.get("assembly_strategy", "individual")
+ASSEMBLY_STRATEGY = PIPELINE_CONFIG.get("assembly_strategy", "by_sample")
 GROUPS_FILE = PIPELINE_CONFIG.get("groups_file", None)
 
 # ================================================================================
@@ -198,21 +198,21 @@ def validate_config():
 
     # Check assembly strategy
     # NOTE: "coassembly" has been removed - research shows it performs worst on all metrics
-    # The new two-stage workflow uses either "individual" or "custom_groups"
-    valid_strategies = ["individual", "custom_groups"]
+    # The new two-stage workflow uses either "by_sample" or "by_group"
+    valid_strategies = ["by_sample", "by_group"]
     if ASSEMBLY_STRATEGY not in valid_strategies:
         raise ValueError(
             f"Invalid pipeline.assembly_strategy: '{ASSEMBLY_STRATEGY}'. "
             f"Must be one of: {valid_strategies}\n"
             f"Note: 'coassembly' has been removed - research shows global coassembly "
-            f"performs poorly. Use 'individual' (default) or 'custom_groups' instead."
+            f"performs poorly. Use 'by_sample' (default) or 'by_group' instead."
         )
 
-    # Validate custom_groups configuration
-    if ASSEMBLY_STRATEGY == "custom_groups":
+    # Validate by_group configuration
+    if ASSEMBLY_STRATEGY == "by_group":
         if not GROUPS_FILE:
             raise ValueError(
-                "pipeline.assembly_strategy='custom_groups' but pipeline.groups_file not specified!\n"
+                "pipeline.assembly_strategy='by_group' but pipeline.groups_file not specified!\n"
                 "Please add: pipeline:\n  groups_file: 'path/to/sample_groups.tsv'"
             )
 
@@ -230,7 +230,7 @@ def validate_config():
     print(f"  Run assembly: {RUN_ASSEMBLY}")
     if RUN_ASSEMBLY:
         print(f"  Assembly strategy: {ASSEMBLY_STRATEGY}")
-        if ASSEMBLY_STRATEGY == "custom_groups":
+        if ASSEMBLY_STRATEGY == "by_group":
             print(f"  Groups file: {GROUPS_FILE}")
             print(f"  Number of groups: {len(GROUP_IDS)}")
 
@@ -283,7 +283,7 @@ def get_final_outputs():
 
     # ===== Assembly Outputs =====
     # Include assembly outputs if assembly is requested and not starting from contigs
-    # NOTE: Both "individual" and "custom_groups" strategies use the two-stage workflow:
+    # NOTE: Both "by_sample" and "by_group" strategies use the two-stage workflow:
     #   Stage 1: MEGAHIT assemblies (per-sample or per-group)
     #   Stage 2: Rename contigs with unique IDs
     #   Stage 3: Concatenate all renamed contigs
@@ -376,7 +376,7 @@ onstart:
     print(f"  Run assembly: {RUN_ASSEMBLY}")
     if RUN_ASSEMBLY:
         print(f"  Assembly strategy: {ASSEMBLY_STRATEGY} (two-stage workflow)")
-        if ASSEMBLY_STRATEGY == "custom_groups" and GROUP_IDS:
+        if ASSEMBLY_STRATEGY == "by_group" and GROUP_IDS:
             print(f"  Custom groups: {len(GROUP_IDS)} groups defined")
     print(f"  Samples: {len(SAMPLES)}")
     print(f"  Output directory: {OUTDIR}")
@@ -394,8 +394,8 @@ onsuccess:
     if RUN_ASSEMBLY:
         print(f"  - Final assembly (Flye): {OUTDIR}/assembly/{ASSEMBLY_STRATEGY}/final.contigs.fa")
         print(f"  - Assembly stats: {OUTDIR}/reports/assembly_stats_{ASSEMBLY_STRATEGY}.tsv")
-        if ASSEMBLY_STRATEGY == "individual":
+        if ASSEMBLY_STRATEGY == "by_sample":
             print(f"  - Per-sample MEGAHIT assemblies: {OUTDIR}/assembly/per_sample/*/final.contigs.fa")
-        elif ASSEMBLY_STRATEGY == "custom_groups":
+        elif ASSEMBLY_STRATEGY == "by_group":
             print(f"  - Per-group MEGAHIT assemblies: {OUTDIR}/assembly/per_group/*/final.contigs.fa")
     print("="*80 + "\n")
