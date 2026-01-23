@@ -289,17 +289,6 @@ def get_final_outputs():
     #   Stage 3: Concatenate all renamed contigs
     #   Stage 4: Flye meta-assembly
     if RUN_ASSEMBLY and START_FROM != "contigs":
-        # BBMerge outputs (needed for assembly)
-        outputs.extend(
-            expand(f"{OUTDIR}/bbmerge/{{sample}}_merged.fastq.gz", sample=SAMPLES)
-        )
-        outputs.extend(
-            expand(f"{OUTDIR}/bbmerge/{{sample}}_R1_unmerged.fastq.gz", sample=SAMPLES)
-        )
-        outputs.extend(
-            expand(f"{OUTDIR}/bbmerge/{{sample}}_R2_unmerged.fastq.gz", sample=SAMPLES)
-        )
-
         # Final assembly output (strategy-specific paths for comparison)
         # The final output is the Flye meta-assembly
         outputs.extend([
