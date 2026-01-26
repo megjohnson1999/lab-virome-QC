@@ -25,16 +25,16 @@ pipeline:
   # Assembly strategy (only used if run_assembly=true)
   # Both strategies use a two-stage workflow: MEGAHIT -> Flye meta-assembly
   #
-  # "individual": Assemble each sample separately with MEGAHIT, then combine
-  #               all contigs via Flye meta-assembly (default, recommended)
-  # "custom_groups": Assemble user-defined groups with MEGAHIT, then combine
-  #                  all group contigs via Flye meta-assembly
+  # "by_sample": Assemble each sample separately with MEGAHIT, then combine
+  #              all contigs via Flye meta-assembly (default, recommended)
+  # "by_group": Assemble user-defined groups with MEGAHIT, then combine
+  #             all group contigs via Flye meta-assembly
   #
   # NOTE: Global "coassembly" has been removed - research shows it performs
-  # worst on all metrics. Use "individual" or "custom_groups" instead.
-  assembly_strategy: "individual"
+  # worst on all metrics. Use "by_sample" or "by_group" instead.
+  assembly_strategy: "by_sample"
 
-  # Groups file (required if assembly_strategy="custom_groups")
+  # Groups file (required if assembly_strategy="by_group")
   # TSV file with exactly 2 columns: sample_id and group_id
   # Example:
   #   sample001    patient_A
@@ -66,6 +66,13 @@ deduplication:
 
     # Note: Optical duplicates are ALWAYS removed (clumpify step)
     # This setting only controls PCR duplicate removal (dedupe.sh)
+
+# rRNA removal settings
+rrna_removal:
+  # Enable rRNA removal step (default: true)
+  # Disable for samples where rRNA is not expected (e.g., DNA-only protocols)
+  # or when you want to retain rRNA for downstream analysis
+  enabled: true
 
 # Reference databases
 references:

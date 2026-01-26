@@ -435,10 +435,21 @@ rule remove_pcr_duplicates:
 
     Note: Files not marked as temp() to avoid broken symlinks in QC-only mode.
           When enabled, these are the final clean reads accessed via symlinks.
+
+    Note: Input depends on rRNA removal toggle - uses rrna_removed if enabled,
+          host_depleted if disabled.
     """
     input:
-        r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz",
-        r2 = f"{OUTDIR}/rrna_removed/{{sample}}_R2.fastq.gz"
+        r1 = lambda wc: (
+            f"{OUTDIR}/rrna_removed/{wc.sample}_R1.fastq.gz"
+            if config.get("rrna_removal", {}).get("enabled", True)
+            else f"{OUTDIR}/host_depleted/{wc.sample}_R1.fastq.gz"
+        ),
+        r2 = lambda wc: (
+            f"{OUTDIR}/rrna_removed/{wc.sample}_R2.fastq.gz"
+            if config.get("rrna_removal", {}).get("enabled", True)
+            else f"{OUTDIR}/host_depleted/{wc.sample}_R2.fastq.gz"
+        )
     output:
         r1 = f"{OUTDIR}/pcr_deduplicated/{{sample}}_R1.fastq.gz",
         r2 = f"{OUTDIR}/pcr_deduplicated/{{sample}}_R2.fastq.gz",
@@ -470,10 +481,12 @@ rule remove_pcr_duplicates:
 rule final_fastqc:
     """
     Final FastQC on clean reads
+
+    Uses the final QC step output based on config toggles.
     """
     input:
-        r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz",
-        r2 = f"{OUTDIR}/rrna_removed/{{sample}}_R2.fastq.gz"
+        r1 = lambda wc: get_clean_reads_source(wc.sample, "R1"),
+        r2 = lambda wc: get_clean_reads_source(wc.sample, "R2")
     output:
         html_r1 = f"{OUTDIR}/fastqc/final/{{sample}}_R1_fastqc.html",
         html_r2 = f"{OUTDIR}/fastqc/final/{{sample}}_R2_fastqc.html",
@@ -489,24 +502,37 @@ rule final_fastqc:
         fastqc -t {threads} -o $(dirname {output.html_r1}) {input.r1} {input.r2} 2>&1 | tee {log}
         """
 
+def get_clean_reads_source(sample, read):
+    """
+    Determine the source of clean reads based on config toggles.
+
+    Priority order (latest step that is enabled):
+    1. pcr_deduplicated (if PCR dedup enabled)
+    2. rrna_removed (if rRNA removal enabled)
+    3. host_depleted (fallback when both disabled)
+    """
+    pcr_dedup_enabled = config.get("deduplication", {}).get("pcr", {}).get("enabled", False)
+    rrna_enabled = config.get("rrna_removal", {}).get("enabled", True)
+
+    if pcr_dedup_enabled:
+        return f"{OUTDIR}/pcr_deduplicated/{sample}_{read}.fastq.gz"
+    elif rrna_enabled:
+        return f"{OUTDIR}/rrna_removed/{sample}_{read}.fastq.gz"
+    else:
+        return f"{OUTDIR}/host_depleted/{sample}_{read}.fastq.gz"
+
 rule symlink_clean_reads:
     """
     Create symlinks to final clean reads for easy access
 
-    Links to either pcr_deduplicated or rrna_removed files depending on
-    whether PCR deduplication is enabled in the config.
+    Links to the appropriate QC step based on config toggles:
+    - pcr_deduplicated (if PCR dedup enabled)
+    - rrna_removed (if rRNA removal enabled, default)
+    - host_depleted (if both rRNA and PCR dedup disabled)
     """
     input:
-        r1 = lambda wc: (
-            f"{OUTDIR}/pcr_deduplicated/{wc.sample}_R1.fastq.gz"
-            if config.get("deduplication", {}).get("pcr", {}).get("enabled", False)
-            else f"{OUTDIR}/rrna_removed/{wc.sample}_R1.fastq.gz"
-        ),
-        r2 = lambda wc: (
-            f"{OUTDIR}/pcr_deduplicated/{wc.sample}_R2.fastq.gz"
-            if config.get("deduplication", {}).get("pcr", {}).get("enabled", False)
-            else f"{OUTDIR}/rrna_removed/{wc.sample}_R2.fastq.gz"
-        )
+        r1 = lambda wc: get_clean_reads_source(wc.sample, "R1"),
+        r2 = lambda wc: get_clean_reads_source(wc.sample, "R2")
     output:
         r1 = f"{OUTDIR}/clean_reads/{{sample}}_R1.fastq.gz",
         r2 = f"{OUTDIR}/clean_reads/{{sample}}_R2.fastq.gz"
@@ -526,6 +552,7 @@ rule count_reads:
 
     Tracks reads through the full pipeline including primer B removal
     Note: phix_removed step removed since we now flag instead of filter
+    Note: Conditionally includes rrna_removed step if enabled
     Note: Conditionally includes pcr_deduplicated step if enabled
     Note: Can take several hours for large samples (50M+ reads)
     """
@@ -536,13 +563,15 @@ rule count_reads:
         pb_step1_r1 = f"{OUTDIR}/primer_b/step1/{{sample}}_R1.fastq.gz",
         pb_step2_r1 = f"{OUTDIR}/primer_b/step2/{{sample}}_R1.fastq.gz",
         host_r1 = f"{OUTDIR}/host_depleted/{{sample}}_R1.fastq.gz",
-        rrna_r1 = f"{OUTDIR}/rrna_removed/{{sample}}_R1.fastq.gz",
-        pcr_dedup_r1 = lambda wc: f"{OUTDIR}/pcr_deduplicated/{wc.sample}_R1.fastq.gz" if config.get("deduplication", {}).get("pcr", {}).get("enabled", False) else []
+        rrna_r1 = lambda wc: f"{OUTDIR}/rrna_removed/{wc.sample}_R1.fastq.gz" if config.get("rrna_removal", {}).get("enabled", True) else [],
+        pcr_dedup_r1 = lambda wc: f"{OUTDIR}/pcr_deduplicated/{wc.sample}_R1.fastq.gz" if config.get("deduplication", {}).get("pcr", {}).get("enabled", False) else [],
+        clean_r1 = lambda wc: get_clean_reads_source(wc.sample, "R1")
     output:
         temp(f"{OUTDIR}/reports/read_counts/{{sample}}.tsv")
     resources:
         time_min = 360
     params:
+        rrna_enabled = config.get("rrna_removal", {}).get("enabled", True),
         pcr_dedup_enabled = config.get("deduplication", {}).get("pcr", {}).get("enabled", False)
     conda:
         "../envs/qc.yaml"
@@ -555,15 +584,19 @@ rule count_reads:
         echo -e "{wildcards.sample}\tprimer_b_fwd\t$(zcat {input.pb_step1_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         echo -e "{wildcards.sample}\tprimer_b_rc\t$(zcat {input.pb_step2_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         echo -e "{wildcards.sample}\thost_depleted\t$(zcat {input.host_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
-        echo -e "{wildcards.sample}\trrna_removed\t$(zcat {input.rrna_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
+
+        # Conditionally add rRNA removal stats
+        if [ "{params.rrna_enabled}" = "True" ]; then
+            echo -e "{wildcards.sample}\trrna_removed\t$(zcat {input.rrna_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
+        fi
 
         # Conditionally add PCR dedup stats
         if [ "{params.pcr_dedup_enabled}" = "True" ]; then
             echo -e "{wildcards.sample}\tpcr_deduplicated\t$(zcat {input.pcr_dedup_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
-            echo -e "{wildcards.sample}\tclean\t$(zcat {input.pcr_dedup_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
-        else
-            echo -e "{wildcards.sample}\tclean\t$(zcat {input.rrna_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         fi
+
+        # Final clean reads (from whatever the last enabled step is)
+        echo -e "{wildcards.sample}\tclean\t$(zcat {input.clean_r1} | wc -l | awk '{{print $1/4}}')" >> {output}
         """
 
 rule merge_read_counts:

@@ -29,14 +29,17 @@ def get_reads_for_assembly(wildcards):
     Get cleaned reads for assembly based on pipeline entry point.
 
     Returns paths to R1/R2 files depending on where pipeline starts.
+    Uses clean_reads symlinks which automatically point to the correct
+    final QC step based on config toggles (rRNA removal, PCR dedup).
     """
     start_from = config["pipeline"].get("start_from", "raw_reads")
 
     if start_from == "raw_reads":
-        # Use QC module outputs (rrna_removed = final clean reads)
+        # Use QC module outputs via clean_reads symlinks
+        # These automatically point to the correct final step based on config
         return {
-            "r1": f"{OUTDIR}/rrna_removed/{wildcards.sample}_R1.fastq.gz",
-            "r2": f"{OUTDIR}/rrna_removed/{wildcards.sample}_R2.fastq.gz"
+            "r1": f"{OUTDIR}/clean_reads/{wildcards.sample}_R1.fastq.gz",
+            "r2": f"{OUTDIR}/clean_reads/{wildcards.sample}_R2.fastq.gz"
         }
     elif start_from == "cleaned_reads":
         # Use user-provided cleaned reads
@@ -61,6 +64,8 @@ def get_group_reads_for_assembly(wildcards):
     Get reads for all samples in a group (for by_group strategy).
 
     Returns dict with lists of R1/R2 files for all samples in the group.
+    Uses clean_reads symlinks which automatically point to the correct
+    final QC step based on config toggles (rRNA removal, PCR dedup).
     """
     group_id = wildcards.group
     group_samples = GROUPS_TO_SAMPLES.get(group_id, [])
@@ -68,7 +73,7 @@ def get_group_reads_for_assembly(wildcards):
     start_from = config["pipeline"].get("start_from", "raw_reads")
 
     if start_from == "raw_reads":
-        base_dir = f"{OUTDIR}/rrna_removed"
+        base_dir = f"{OUTDIR}/clean_reads"
     elif start_from == "cleaned_reads":
         base_dir = config["pipeline"].get("cleaned_reads_dir")
     else:

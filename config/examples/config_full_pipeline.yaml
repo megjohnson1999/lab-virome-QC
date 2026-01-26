@@ -22,13 +22,13 @@ pipeline:
 
   # Assembly strategy (IMPORTANT: Choose based on your analysis goals)
   # ----------------------------------------------------------------------------
-  # "individual" (DEFAULT, RECOMMENDED):
+  # "by_sample" (DEFAULT, RECOMMENDED):
   #   - Stage 1: MEGAHIT assembles each sample separately
   #   - Stage 2-4: Contigs are renamed, concatenated, and meta-assembled with Flye
   #   - Use for most virome studies
   #   - Output: Final meta-assembled contigs + per-sample MEGAHIT assemblies
   #
-  # "custom_groups":
+  # "by_group":
   #   - Stage 1: MEGAHIT assembles user-defined groups of related samples
   #   - Stage 2-4: Contigs are renamed, concatenated, and meta-assembled with Flye
   #   - Use when samples are biologically related (same patient, same treatment)
@@ -37,11 +37,11 @@ pipeline:
   #   - Output: Final meta-assembled contigs + per-group MEGAHIT assemblies
   #
   # NOTE: Global "coassembly" has been removed - research shows it performs
-  # worst on all assembly metrics. Use "individual" or "custom_groups" instead.
+  # worst on all assembly metrics. Use "by_sample" or "by_group" instead.
   # ----------------------------------------------------------------------------
-  assembly_strategy: "individual"
+  assembly_strategy: "by_sample"
 
-  # Groups file (required only if assembly_strategy="custom_groups")
+  # Groups file (required only if assembly_strategy="by_group")
   # See config/examples/sample_groups.tsv for format
   # groups_file: "config/examples/sample_groups.tsv"
 

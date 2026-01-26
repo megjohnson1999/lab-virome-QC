@@ -199,7 +199,7 @@ def main():
     log_file = snakemake.log[0] if snakemake.log else None
 
     # Get assembly strategy
-    assembly_strategy = snakemake.params.get("strategy", "individual")
+    assembly_strategy = snakemake.params.get("strategy", "by_sample")
 
     results = []
 
